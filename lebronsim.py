@@ -2,6 +2,7 @@ import random
 import streamlit as st
 import sqlite3
 import bcrypt
+import uuid
 from PIL import Image
 import time
 
