@@ -2241,7 +2241,7 @@ def main():
 
     # Sidebar navigation
     if st.session_state.get("logged_in", False):
-        nav_options = ["LePlay", "LePASS", "LeLogout", "LeCareer"]
+        nav_options = ["LePlay", "LePASS", "LeLogout", "LeCareer", "PvP"]
     else:
         nav_options = ["Login", "Register"]
 
