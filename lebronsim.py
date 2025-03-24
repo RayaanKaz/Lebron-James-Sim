@@ -21,6 +21,107 @@ def init_db():
     conn.commit()
     conn.close()
 
+def create_pvp_game_table():
+    """Create a table to track PvP game states"""
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS pvp_games (
+            game_code TEXT PRIMARY KEY,
+            player1_username TEXT,
+            player2_username TEXT,
+            player1_avatar TEXT,
+            player2_avatar TEXT,
+            player1_level INTEGER,
+            player2_level INTEGER,
+            player1_health INTEGER DEFAULT 150,
+            player2_health INTEGER DEFAULT 150,
+            current_round INTEGER DEFAULT 1,
+            total_rounds INTEGER DEFAULT 3,
+            game_status TEXT DEFAULT 'waiting', 
+            winner_username TEXT,
+            current_turn TEXT,
+            last_action_timestamp DATETIME,
+            player1_wins INTEGER DEFAULT 0,
+            player2_wins INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def generate_game_code():
+    """Generate a unique 6-character game code"""
+    return str(uuid.uuid4())[:6].upper()
+
+def create_pvp_game(player1_username):
+    """Create a new PvP game entry"""
+    game_code = generate_game_code()
+    
+    # Get player's avatar and level
+    player_stats = get_user_stats(player1_username)
+    
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO pvp_games 
+        (game_code, player1_username, player1_avatar, player1_level) 
+        VALUES (?, ?, ?, ?)
+    ''', (
+        game_code, 
+        player1_username, 
+        st.session_state.get('equipped_lebron', 'default_avatar'),
+        player_stats.get('level', 1)
+    ))
+    conn.commit()
+    conn.close()
+    
+    return game_code
+
+def join_pvp_game(game_code, player2_username):
+    """Join an existing PvP game"""
+    # Get player's avatar and level
+    player_stats = get_user_stats(player2_username)
+    
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    
+    # Check if game exists and is waiting
+    c.execute('''
+        SELECT * FROM pvp_games 
+        WHERE game_code = ? AND game_status = 'waiting'
+    ''', (game_code,))
+    game = c.fetchone()
+    
+    if not game:
+        conn.close()
+        return False
+    
+    # Randomly choose who goes first
+    first_turn = random.choice([player1_username, player2_username])
+    
+    # Update game with player 2 details
+    c.execute('''
+        UPDATE pvp_games 
+        SET player2_username = ?, 
+            player2_avatar = ?, 
+            player2_level = ?, 
+            game_status = 'active',
+            current_turn = ?,
+            current_round = 1
+        WHERE game_code = ?
+    ''', (
+        player2_username, 
+        st.session_state.get('equipped_lebron', 'default_avatar'),
+        player_stats.get('level', 1),
+        first_turn,
+        game_code
+    ))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+
 def register_user(username, password):
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
     conn = sqlite3.connect("users.db")
@@ -1346,6 +1447,179 @@ def lepass_ui():
         st.session_state.page = "LePlay"
         st.rerun()
 
+def pvp_battle_page():
+    st.title("🥊 Player vs Player Battle")
+    
+    # Authentication check
+    if 'username' not in st.session_state:
+        st.warning("Please log in first!")
+        return
+    
+    # Sidebar for game options
+    st.sidebar.header("PvP Battle Options")
+    
+    # Game mode selection
+    game_mode = st.sidebar.radio("Choose Game Mode", 
+        ["Create Game", "Join Game"], 
+        help="Create a new PvP game or join an existing one"
+    )
+    
+    if game_mode == "Create Game":
+        if st.sidebar.button("Create Game"):
+            game_code = create_pvp_game(st.session_state.username)
+            st.sidebar.success(f"Game Created! Code: {game_code}")
+            st.sidebar.info("Share this code with your opponent to join.")
+    
+    else:  # Join Game
+        game_code = st.sidebar.text_input("Enter Game Code")
+        
+        if st.sidebar.button("Join Game"):
+            success = join_pvp_game(game_code, st.session_state.username)
+            
+            if success:
+                st.sidebar.success("Successfully joined the game!")
+                # TODO: Redirect to active PvP battle screen
+            else:
+                st.sidebar.error("Invalid game code or game is not available.")
+    
+    # Display active/waiting games
+    st.sidebar.subheader("Active Games")
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    c.execute('''
+        SELECT game_code, player1_username, game_status 
+        FROM pvp_games 
+        WHERE game_status IN ('waiting', 'active')
+    ''')
+    active_games = c.fetchall()
+    conn.close()
+    
+    for game in active_games:
+        game_code, host, status = game
+        st.sidebar.markdown(f"""
+        🎮 Code: `{game_code}` 
+        - Host: {host}
+        - Status: {status}
+        """)
+
+def process_pvp_round(game_code, attacker, defender, action):
+    """
+    Process a single round of PvP combat
+    
+    Args:
+    - game_code: Unique identifier for the game
+    - attacker: Username of the attacking player
+    - defender: Username of the defending player
+    - action: Player's chosen action (attack/defend/special/rest)
+    
+    Returns:
+    - Damage dealt
+    - Action result message
+    """
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    
+    # Fetch game and player details
+    c.execute('''
+        SELECT player1_username, player2_username, 
+               player1_health, player2_health, 
+               current_round, total_rounds
+        FROM pvp_games 
+        WHERE game_code = ?
+    ''', (game_code,))
+    game = c.fetchone()
+    
+    player1_username, player2_username, p1_health, p2_health, current_round, total_rounds = game
+    
+    # Determine attacker and defender health
+    attacker_is_p1 = attacker == player1_username
+    defender_health = p2_health if attacker_is_p1 else p1_health
+    
+    # Simulate combat logic (similar to single-player battle)
+    base_damage = random.randint(15, 30)
+    critical = random.random() < 0.2
+    
+    if critical:
+        base_damage = int(base_damage * 1.5)
+    
+    # Check for defending
+    if action == "defend":
+        base_damage = int(base_damage * 0.5)
+    
+    # Apply damage
+    new_defender_health = max(0, defender_health - base_damage)
+    
+    # Update database
+    if attacker_is_p1:
+        c.execute('''
+            UPDATE pvp_games 
+            SET player2_health = ?, 
+                current_turn = ?, 
+                current_round = current_round + 1
+            WHERE game_code = ?
+        ''', (new_defender_health, player2_username, game_code))
+    else:
+        c.execute('''
+            UPDATE pvp_games 
+            SET player1_health = ?, 
+                current_turn = ?, 
+                current_round = current_round + 1
+            WHERE game_code = ?
+        ''', (new_defender_health, player1_username, game_code))
+    
+    conn.commit()
+    conn.close()
+    
+    # Determine winner if health reaches 0
+    if new_defender_health == 0:
+        winner = attacker
+        return base_damage, f"{attacker} wins the round!"
+    
+    return base_damage, f"{attacker} deals {base_damage} damage to {defender}!"
+
+def check_pvp_game_winner(game_code):
+    """
+    Check if a player has won the best-of-3 series
+    
+    Returns:
+    - Winner's username or None
+    """
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    
+    c.execute('''
+        SELECT player1_username, player2_username, 
+               player1_wins, player2_wins, 
+               total_rounds
+        FROM pvp_games 
+        WHERE game_code = ?
+    ''', (game_code,))
+    game = c.fetchone()
+    
+    player1, player2, p1_wins, p2_wins, total_rounds = game
+    
+    winner = None
+    if p1_wins >= (total_rounds // 2 + 1):
+        winner = player1
+    elif p2_wins >= (total_rounds // 2 + 1):
+        winner = player2
+    
+    if winner:
+        # Update game status
+        c.execute('''
+            UPDATE pvp_games 
+            SET game_status = 'completed', 
+                winner_username = ?
+            WHERE game_code = ?
+        ''', (winner, game_code))
+        conn.commit()
+    
+    conn.close()
+    return winner
+
+# Initialize PvP game database
+create_pvp_game_table()
+
 def lecareer_ui():
     """Display the LeCareer page showing LeBron's career journey with text and images"""
     
@@ -1997,7 +2271,8 @@ def main():
         logout_ui()
     elif st.session_state.page == "LeCareer":
         lecareer_ui()
-
+    elif st.session_state.page == "PvP":
+        pvp_battle_page()
 
 if __name__ == "__main__":
     main()
