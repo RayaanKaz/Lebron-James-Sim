@@ -1450,7 +1450,8 @@ def lepass_ui():
 
 def pvp_battle_page():
     st.title("🥊 Player vs Player Battle")
-    
+
+    expire_inactive_pvp_games()
     # Authentication check
     if 'username' not in st.session_state:
         st.warning("Please log in first!")
@@ -1502,6 +1503,25 @@ def pvp_battle_page():
         - Host: {host}
         - Status: {status}
         """)
+    
+def expire_inactive_pvp_games(timeout_minutes=30):
+    """Expire games that have been inactive too long"""
+    now = time.time()
+    cutoff = now - (timeout_minutes * 60)
+
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+
+    c.execute('''
+        UPDATE pvp_games
+        SET game_status = 'expired'
+        WHERE game_status = 'active' 
+        AND (strftime('%s', last_action_timestamp) < ?)
+    ''', (int(cutoff),))
+    
+    conn.commit()
+    conn.close()
+
 
 def process_pvp_round(game_code, attacker, defender, action):
     """
@@ -1606,16 +1626,19 @@ def check_pvp_game_winner(game_code):
         winner = player2
     
     if winner:
-        # Update game status
-        c.execute('''
-            UPDATE pvp_games 
-            SET game_status = 'completed', 
-                winner_username = ?
-            WHERE game_code = ?
-        ''', (winner, game_code))
-        conn.commit()
-    
+    # Update game status
+    c.execute('''
+        UPDATE pvp_games 
+        SET game_status = 'completed', 
+            winner_username = ?
+        WHERE game_code = ?
+    ''', (winner, game_code))
+    conn.commit()
     conn.close()
+
+    # ✅ Reward XP here
+    reward_pvp_winner(game_code)
+    
     return winner
 
 # Initialize PvP game database
@@ -2045,6 +2068,26 @@ def play_ui():
         display_difficulty_selection()
     else:
         display_game()
+    
+def reward_pvp_winner(game_code):
+    """Award XP to the PvP winner and update their stats"""
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    c.execute("SELECT winner_username FROM pvp_games WHERE game_code = ?", (game_code,))
+    winner_row = c.fetchone()
+    conn.close()
+
+    if not winner_row or not winner_row[0]:
+        return
+
+    winner = winner_row[0]
+    xp_earned = 100  # Arbitrary value, adjust as you like
+
+    # Call your existing XP update function
+    update_user_xp_fixed(winner, xp_earned, won=True)
+
+    # Optional: notify
+    st.success(f"{winner} earned {xp_earned} XP for winning the PvP match!")
 
 # --------------------- Custom CSS --------------------- #
 
