@@ -1626,20 +1626,20 @@ def check_pvp_game_winner(game_code):
         winner = player2
     
     if winner:
-    # Update game status
-    c.execute('''
-        UPDATE pvp_games 
-        SET game_status = 'completed', 
-            winner_username = ?
-        WHERE game_code = ?
-    ''', (winner, game_code))
-    conn.commit()
-    conn.close()
-
-    # ✅ Reward XP here
-    reward_pvp_winner(game_code)
+        # Update game status
+        c.execute('''
+            UPDATE pvp_games 
+            SET game_status = 'completed', 
+                winner_username = ?
+            WHERE game_code = ?
+        ''', (winner, game_code))
+        conn.commit()
+        conn.close()
     
-    return winner
+        # ✅ Reward XP here
+        reward_pvp_winner(game_code)
+        
+        return winner
 
 # Initialize PvP game database
 create_pvp_game_table()
