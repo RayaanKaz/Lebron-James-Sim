@@ -1471,9 +1471,10 @@ def pvp_battle_page():
     if game_mode == "Create Game":
         if st.sidebar.button("Create Game"):
             game_code = create_pvp_game(st.session_state.username)
-            st.sidebar.success(f"Game Created! Code: {game_code}")
-            st.sidebar.info("Share this code with your opponent to join.")
-    
+            st.session_state.active_pvp_code = game_code
+            st.session_state.page = "LePvPActive"
+            st.rerun()
+            
     else:  # Join Game
         game_code = st.sidebar.text_input("Enter Game Code")
         
@@ -1482,10 +1483,10 @@ def pvp_battle_page():
             
             if success:
                 st.sidebar.success("Successfully joined the game!")
-                # TODO: Redirect to active PvP battle screen
-            else:
-                st.sidebar.error("Invalid game code or game is not available.")
-    
+                st.session_state.active_pvp_code = game_code
+                st.session_state.page = "LePvPActive"
+                st.rerun()
+                
     # Display active/waiting games
     st.sidebar.subheader("Active Games")
     conn = sqlite3.connect("pvp_games.db")
