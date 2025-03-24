@@ -96,7 +96,9 @@ def join_pvp_game(game_code, player2_username):
     if not game:
         conn.close()
         return False
-    
+
+    player1_username = game[1]  # ✅ Extract player1_username from game row
+
     # Randomly choose who goes first
     first_turn = random.choice([player1_username, player2_username])
     
