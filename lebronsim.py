@@ -1,27 +1,27 @@
- import random
- import streamlit as st
- import sqlite3
- import bcrypt
- import string
- from PIL import Image
- from datetime import datetime, timedelta
- import time
+import random
+import streamlit as st
+import sqlite3
+import bcrypt
+import string
+from PIL import Image
+from datetime import datetime, timedelta
+import time
  
- def init_db():
-     conn = sqlite3.connect("users.db")
-     c = conn.cursor()
-     c.execute('''
-         CREATE TABLE IF NOT EXISTS users (
-             username TEXT PRIMARY KEY,
-             password BLOB,
-             xp INTEGER DEFAULT 0,
-             level INTEGER DEFAULT 1,
-             wins INTEGER DEFAULT 0,
-             losses INTEGER DEFAULT 0
-         )
-     ''')
-     conn.commit()
-     conn.close()
+def init_db():
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password BLOB,
+            xp INTEGER DEFAULT 0,
+            level INTEGER DEFAULT 1,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
  
  def init_multiplayer_db():
     conn = sqlite3.connect("users.db")
