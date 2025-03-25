@@ -432,19 +432,21 @@ def authenticate_user(username, password):
         return True
     return False
 
-
 def multiplayer_ui():
     """Display the multiplayer mode UI"""
+    # -- Only allow access if logged in --
     if not st.session_state.get("logged_in", False):
         st.error("You must be logged in to play multiplayer!")
         st.session_state.page = "Login"
         st.rerun()
 
+    # -- Initialize session state for multiplayer --
     if "multiplayer_room_code" not in st.session_state:
         st.session_state.multiplayer_room_code = None
         st.session_state.multiplayer_role = None
         st.session_state.multiplayer_last_update = 0
 
+    # -- Room creation/joining UI --
     if not st.session_state.multiplayer_room_code:
         st.markdown("<h1 class='game-title'>🏀 LeMultiplayer</h1>", unsafe_allow_html=True)
         col1, col2 = st.columns(2)
@@ -469,6 +471,7 @@ def multiplayer_ui():
                     st.error("Could not join room. It may not exist or is full.")
 
     else:
+        # -- Retrieve the room info --
         room = get_room_state(st.session_state.multiplayer_room_code)
         if not room:
             st.error("Room not found. It may have expired.")
@@ -480,28 +483,45 @@ def multiplayer_ui():
             unsafe_allow_html=True,
         )
 
+        # -- Show match progress --
         st.markdown(f"**Match Round:** {room['match_round']}/3")
-        st.markdown(f"**Score:** {room['player1']} {room['player1_wins']} - {room['player2_wins']} {room['player2'] if room['player2'] else 'Waiting...'}")
+        st.markdown(
+            f"**Score:** {room['player1']} {room['player1_wins']} - "
+            f"{room['player2_wins']} {room['player2'] if room['player2'] else 'Waiting...'}"
+        )
 
+        # -- Waiting screen --
         if room["game_state"] == "waiting":
             st.markdown("### Waiting for opponent to join...")
+            # NOTE: Let’s auto-refresh so the host sees updates
+            time.sleep(2)
+            st.rerun()
+
             st.markdown(f"Share this room code: **{st.session_state.multiplayer_room_code}**")
 
             if st.button("Cancel", use_container_width=True):
+                # Clean up room if host cancels
                 if st.session_state.multiplayer_role == "host":
                     conn = sqlite3.connect("users.db")
                     c = conn.cursor()
-                    c.execute("DELETE FROM multiplayer_rooms WHERE room_code = ?", (st.session_state.multiplayer_room_code,))
+                    c.execute(
+                        "DELETE FROM multiplayer_rooms WHERE room_code = ?",
+                        (st.session_state.multiplayer_room_code,),
+                    )
                     conn.commit()
                     conn.close()
                 st.session_state.multiplayer_room_code = None
                 st.rerun()
             return
 
+        # -- Determine which side this player is on --
         player = "player1" if room["player1"] == st.session_state.username else "player2"
         opponent = "player2" if player == "player1" else "player1"
 
+        # -- Display both players --
         col1, col2 = st.columns(2)
+
+        # (Left column: current player)
         with col1:
             st.markdown(f"### You ({st.session_state.username})")
             st.image(get_player_profile_pic(st.session_state.username), width=150)
@@ -512,9 +532,13 @@ def multiplayer_ui():
             st.markdown(f"**Special Meter:** {room[f'{player}_special']}/100")
             st.progress(room[f"{player}_special"] / 100)
 
-            if room["game_state"] == "playing" and (
-                (player == "player1" and room["current_turn"] == 1)
-                or (player == "player2" and room["current_turn"] == 2)
+            # -- Show move selection if it's this player's turn --
+            if (
+                room["game_state"] == "playing"
+                and (
+                    (player == "player1" and room["current_turn"] == 1)
+                    or (player == "player2" and room["current_turn"] == 2)
+                )
             ):
                 st.markdown("### Your Move")
                 if not room[f"{player}_ready"]:
@@ -522,42 +546,87 @@ def multiplayer_ui():
 
                     with colA:
                         attack_disabled = room[f"{player}_stamina"] < 15
-                        if st.button("🏀 Attack", disabled=attack_disabled, use_container_width=True,
-                                    help="Basic attack (Cost: 15 Stamina, +10 Special Meter)"):
-                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "attack")
+                        if st.button(
+                            "🏀 Attack",
+                            disabled=attack_disabled,
+                            use_container_width=True,
+                            help="Basic attack (Cost: 15 Stamina, +10 Special Meter)",
+                        ):
+                            update_player_move(
+                                st.session_state.multiplayer_room_code,
+                                st.session_state.username,
+                                "attack",
+                            )
                             st.rerun()
 
                     with colB:
                         defend_disabled = room[f"{player}_stamina"] < 10
-                        if st.button("🛡️ Defend", disabled=defend_disabled, use_container_width=True,
-                                    help="Reduce incoming damage by 50% (Cost: 10 Stamina, +15 Special Meter)"):
-                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "defend")
+                        if st.button(
+                            "🛡️ Defend",
+                            disabled=defend_disabled,
+                            use_container_width=True,
+                            help="Reduce incoming damage by 50% (Cost: 10 Stamina, +15 Special Meter)",
+                        ):
+                            update_player_move(
+                                st.session_state.multiplayer_room_code,
+                                st.session_state.username,
+                                "defend",
+                            )
                             st.rerun()
 
                     with colC:
-                        if st.button("💤 Rest", use_container_width=True, help="Recover 25-40 Stamina (+5 Special Meter)"):
-                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "rest")
+                        if st.button(
+                            "💤 Rest",
+                            use_container_width=True,
+                            help="Recover 25-40 Stamina (+5 Special Meter)",
+                        ):
+                            update_player_move(
+                                st.session_state.multiplayer_room_code,
+                                st.session_state.username,
+                                "rest",
+                            )
                             st.rerun()
 
                     with colD:
-                        special_disabled = room[f"{player}_special"] < 100 or room[f"{player}_stamina"] < 25
-                        if st.button("⭐ Special", disabled=special_disabled, use_container_width=True,
-                                    help="Powerful attack (Requires: Full Special Meter, Costs: 25 Stamina)"):
-                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "special")
+                        special_disabled = (
+                            room[f"{player}_special"] < 100
+                            or room[f"{player}_stamina"] < 25
+                        )
+                        if st.button(
+                            "⭐ Special",
+                            disabled=special_disabled,
+                            use_container_width=True,
+                            help="Powerful attack (Requires: Full Special Meter, Costs: 25 Stamina)",
+                        ):
+                            update_player_move(
+                                st.session_state.multiplayer_room_code,
+                                st.session_state.username,
+                                "special",
+                            )
                             st.rerun()
                 else:
                     st.success("Move submitted! Waiting for opponent...")
 
-                last_action = datetime.strptime(room["last_action"], "%Y-%m-%d %H:%M:%S")
+                # -- Countdown timer logic --
+                last_action = datetime.strptime(
+                    room["last_action"], "%Y-%m-%d %H:%M:%S"
+                )
                 time_elapsed = (datetime.now() - last_action).total_seconds()
                 time_left = max(0, 10 - time_elapsed)
+
                 st.markdown(f"Time remaining: {int(time_left)} seconds")
                 st.progress(time_left / 10)
 
                 if time_left <= 0:
-                    update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "rest")
+                    # Time's up - auto-submit a rest
+                    update_player_move(
+                        st.session_state.multiplayer_room_code,
+                        st.session_state.username,
+                        "rest",
+                    )
                     st.rerun()
 
+        # (Right column: opponent)
         with col2:
             opponent_username = room[opponent] if room[opponent] else "Waiting..."
             st.markdown(f"### Opponent ({opponent_username})")
@@ -566,7 +635,11 @@ def multiplayer_ui():
                 st.image(get_player_profile_pic(room[opponent]), width=150)
                 st.markdown(f"**Health:** {room[f'{opponent}_hp']}/140")
                 st.progress(room[f"{opponent}_hp"] / 140)
-                st.markdown(f"**Special Meter:** {'?' if not room[f'{opponent}_ready'] else room[f'{opponent}_special']}/100")
+
+                # Show partial or full special meter
+                st.markdown(
+                    f"**Special Meter:** {'?' if not room[f'{opponent}_ready'] else room[f'{opponent}_special']}/100"
+                )
                 if room[f"{opponent}_ready"]:
                     st.progress(room[f"{opponent}_special"] / 100)
                 else:
@@ -580,17 +653,30 @@ def multiplayer_ui():
             else:
                 st.info("Waiting for opponent to join...")
 
-        if room["game_state"] == "playing" and room["player1_ready"] and room["player2_ready"]:
+        # -- Display the battle log below the player stats --
+        display_battle_log()
+
+        # -- If both are ready, process turn --
+        if (
+            room["game_state"] == "playing"
+            and room["player1_ready"]
+            and room["player2_ready"]
+        ):
             process_multiplayer_turn(st.session_state.multiplayer_room_code)
             st.rerun()
 
+        # -- Handle game over states --
         if room["game_state"] in ("finished", "match_over"):
             if room["game_state"] == "match_over":
                 st.balloons()
                 if room["winner"] == st.session_state.username:
-                    st.success(f"🏆 You won the match {room['player1_wins']}-{room['player2_wins']}!")
+                    st.success(
+                        f"🏆 You won the match {room['player1_wins']}-{room['player2_wins']}!"
+                    )
                 else:
-                    st.error(f"💀 You lost the match {room['player1_wins']}-{room['player2_wins']}.")
+                    st.error(
+                        f"💀 You lost the match {room['player1_wins']}-{room['player2_wins']}."
+                    )
 
                 if room["winner"] == st.session_state.username:
                     st.markdown("**XP Earned:** +150 XP (Match Win)")
@@ -630,8 +716,9 @@ def multiplayer_ui():
                             st.rerun()
                         else:
                             st.info("Waiting for host to restart the match...")
+
             else:
-                # single round
+                # Single round ended
                 if room["winner"] == st.session_state.username:
                     st.success(f"🎉 You won round {room['match_round']}!")
                 elif room["winner"]:
@@ -643,6 +730,7 @@ def multiplayer_ui():
                 time.sleep(2)
                 st.rerun()
 
+        # -- Auto-refresh every 2 seconds so we see state changes --
         time.sleep(2)
         st.rerun()
 
