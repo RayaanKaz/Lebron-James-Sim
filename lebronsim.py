@@ -23,7 +23,7 @@ def init_db():
     conn.commit()
     conn.close()
  
- def init_multiplayer_db():
+def init_multiplayer_db():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     
