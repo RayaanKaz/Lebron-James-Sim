@@ -1,8 +1,10 @@
-import random
+ import random
  import streamlit as st
  import sqlite3
  import bcrypt
+ import string
  from PIL import Image
+ from datetime import datetime, timedelta
  import time
  
  def init_db():
@@ -20,6 +22,360 @@ import random
      ''')
      conn.commit()
      conn.close()
+ 
+ def init_multiplayer_db():
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    
+    # Rooms table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS multiplayer_rooms (
+            room_code TEXT PRIMARY KEY,
+            player1 TEXT,
+            player2 TEXT,
+            player1_ready BOOLEAN DEFAULT 0,
+            player2_ready BOOLEAN DEFAULT 0,
+            player1_move TEXT,
+            player2_move TEXT,
+            player1_hp INTEGER DEFAULT 140,
+            player2_hp INTEGER DEFAULT 140,
+            player1_stamina INTEGER DEFAULT 100,
+            player2_stamina INTEGER DEFAULT 100,
+            player1_special INTEGER DEFAULT 0,
+            player2_special INTEGER DEFAULT 0,
+            current_round INTEGER DEFAULT 1,
+            current_turn INTEGER DEFAULT 1,  # 1 = player1, 2 = player2
+            game_state TEXT DEFAULT 'waiting',  # waiting, playing, finished
+            winner TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            player1_wins INTEGER DEFAULT 0,
+            player2_wins INTEGER DEFAULT 0,
+            match_round INTEGER DEFAULT 1  # For best of 3
+        )
+    ''')
+    
+    # Add multiplayer stats to users table
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN multiplayer_wins INTEGER DEFAULT 0")
+        c.execute("ALTER TABLE users ADD COLUMN multiplayer_losses INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Columns already exist
+    
+    conn.commit()
+    conn.close()
+
+# Add this to the init_db() function
+init_multiplayer_db()
+
+# Add these multiplayer utility functions
+def generate_room_code():
+    """Generate a 6-character room code"""
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(6))
+
+def create_room(player_username):
+    """Create a new multiplayer room"""
+    room_code = generate_room_code()
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    
+    # Clean up old rooms (older than 2 hours)
+    c.execute("DELETE FROM multiplayer_rooms WHERE created_at < datetime('now', '-2 hours')")
+    
+    try:
+        c.execute(
+            "INSERT INTO multiplayer_rooms (room_code, player1, game_state) VALUES (?, ?, 'waiting')",
+            (room_code, player_username)
+        )
+        conn.commit()
+        return room_code
+    except sqlite3.IntegrityError:
+        # If room code collision (very unlikely), try again
+        return create_room(player_username)
+    finally:
+        conn.close()
+   
+ def join_room(room_code, player_username):
+    """Join an existing room as player 2"""
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    
+    c.execute(
+        "UPDATE multiplayer_rooms SET player2 = ?, game_state = 'playing' WHERE room_code = ? AND player2 IS NULL",
+        (player_username, room_code)
+    )
+    conn.commit()
+    success = c.rowcount > 0
+    conn.close()
+    return success
+
+def get_room_state(room_code):
+    """Get current state of a room"""
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    
+    c.execute("SELECT * FROM multiplayer_rooms WHERE room_code = ?", (room_code,))
+    result = c.fetchone()
+    conn.close()
+    
+    if result:
+        columns = [col[0] for col in c.description]
+        return dict(zip(columns, result))
+    return None
+
+def update_player_move(room_code, player_username, move):
+    """Update a player's move in the room"""
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    
+    room = get_room_state(room_code)
+    if not room:
+        return False
+    
+    if room['player1'] == player_username:
+        c.execute(
+            "UPDATE multiplayer_rooms SET player1_move = ?, player1_ready = 1, last_action = CURRENT_TIMESTAMP WHERE room_code = ?",
+            (move, room_code)
+        )
+    elif room['player2'] == player_username:
+        c.execute(
+            "UPDATE multiplayer_rooms SET player2_move = ?, player2_ready = 1, last_action = CURRENT_TIMESTAMP WHERE room_code = ?",
+            (move, room_code)
+        )
+    else:
+        conn.close()
+        return False
+    
+    conn.commit()
+    conn.close()
+    return True
+
+def reset_round(room_code):
+    """Reset the room for a new round"""
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    
+    c.execute(
+        """UPDATE multiplayer_rooms 
+        SET player1_move = NULL, player2_move = NULL,
+            player1_ready = 0, player2_ready = 0,
+            current_turn = 1,
+            last_action = CURRENT_TIMESTAMP
+        WHERE room_code = ?""",
+        (room_code,)
+    )
+    conn.commit()
+    conn.close()
+
+def process_multiplayer_turn(room_code):
+    """Process a completed turn in multiplayer"""
+    room = get_room_state(room_code)
+    if not room or room['game_state'] != 'playing':
+        return
+    
+    # Both players have made their moves
+    if room['player1_move'] and room['player2_move']:
+        conn = sqlite3.connect("users.db")
+        c = conn.cursor()
+        
+        # Process moves (similar to single player but for both players)
+        p1_move = room['player1_move']
+        p2_move = room['player2_move']
+        
+        # Initialize damage values
+        p1_damage = 0
+        p2_damage = 0
+        
+        # Process player 1's move
+        if p1_move == "attack":
+            if room['player1_stamina'] >= 15:
+                p1_damage = random.randint(15, 30)
+                # Critical hit chance
+                if random.random() < 0.2:
+                    p1_damage = int(p1_damage * 1.5)
+                # Update stamina and special meter
+                c.execute(
+                    """UPDATE multiplayer_rooms 
+                    SET player1_stamina = player1_stamina - 15,
+                        player1_special = LEAST(player1_special + 10, 100)
+                    WHERE room_code = ?""",
+                    (room_code,)
+        elif p1_move == "defend":
+            if room['player1_stamina'] >= 10:
+                c.execute(
+                    """UPDATE multiplayer_rooms 
+                    SET player1_stamina = player1_stamina - 10,
+                        player1_special = LEAST(player1_special + 15, 100)
+                    WHERE room_code = ?""",
+                    (room_code,)
+        elif p1_move == "rest":
+            stamina_gain = random.randint(25, 40)
+            c.execute(
+                """UPDATE multiplayer_rooms 
+                SET player1_stamina = LEAST(player1_stamina + ?, 100),
+                    player1_special = LEAST(player1_special + 5, 100)
+                WHERE room_code = ?""",
+                (stamina_gain, room_code))
+        elif p1_move == "special":
+            if room['player1_special'] >= 100 and room['player1_stamina'] >= 25:
+                p1_damage = random.randint(40, 60)
+                c.execute(
+                    """UPDATE multiplayer_rooms 
+                    SET player1_special = 0,
+                        player1_stamina = GREATEST(player1_stamina - 25, 0)
+                    WHERE room_code = ?""",
+                    (room_code,))
+        
+        # Process player 2's move
+        if p2_move == "attack":
+            if room['player2_stamina'] >= 15:
+                p2_damage = random.randint(15, 30)
+                # Critical hit chance
+                if random.random() < 0.2:
+                    p2_damage = int(p2_damage * 1.5)
+                # Update stamina and special meter
+                c.execute(
+                    """UPDATE multiplayer_rooms 
+                    SET player2_stamina = player2_stamina - 15,
+                        player2_special = LEAST(player2_special + 10, 100)
+                    WHERE room_code = ?""",
+                    (room_code,))
+        elif p2_move == "defend":
+            if room['player2_stamina'] >= 10:
+                c.execute(
+                    """UPDATE multiplayer_rooms 
+                    SET player2_stamina = player2_stamina - 10,
+                        player2_special = LEAST(player2_special + 15, 100)
+                    WHERE room_code = ?""",
+                    (room_code,))
+        elif p2_move == "rest":
+            stamina_gain = random.randint(25, 40)
+            c.execute(
+                """UPDATE multiplayer_rooms 
+                SET player2_stamina = LEAST(player2_stamina + ?, 100),
+                    player2_special = LEAST(player2_special + 5, 100)
+                WHERE room_code = ?""",
+                (stamina_gain, room_code))
+        elif p2_move == "special":
+            if room['player2_special'] >= 100 and room['player2_stamina'] >= 25:
+                p2_damage = random.randint(40, 60)
+                c.execute(
+                    """UPDATE multiplayer_rooms 
+                    SET player2_special = 0,
+                        player2_stamina = GREATEST(player2_stamina - 25, 0)
+                    WHERE room_code = ?""",
+                    (room_code,))
+        
+        # Apply damage (considering defense)
+        if p1_move == "defend" and room['player1_stamina'] >= 10:
+            p2_damage = int(p2_damage * 0.5)
+        if p2_move == "defend" and room['player2_stamina'] >= 10:
+            p1_damage = int(p1_damage * 0.5)
+        
+        # Update health
+        c.execute(
+            """UPDATE multiplayer_rooms 
+            SET player1_hp = GREATEST(player1_hp - ?, 0),
+                player2_hp = GREATEST(player2_hp - ?, 0),
+                current_round = current_round + 1,
+                player1_move = NULL,
+                player2_move = NULL,
+                player1_ready = 0,
+                player2_ready = 0,
+                current_turn = CASE WHEN current_turn = 1 THEN 2 ELSE 1 END,
+                last_action = CURRENT_TIMESTAMP
+            WHERE room_code = ?""",
+            (p2_damage, p1_damage, room_code))
+        
+        # Check for winner
+        room = get_room_state(room_code)
+        if room['player1_hp'] <= 0 or room['player2_hp'] <= 0:
+            winner = None
+            if room['player1_hp'] <= 0 and room['player2_hp'] <= 0:
+                # Tie
+                pass
+            elif room['player1_hp'] <= 0:
+                winner = room['player2']
+                c.execute(
+                    "UPDATE multiplayer_rooms SET game_state = 'finished', winner = ? WHERE room_code = ?",
+                    (winner, room_code))
+                # Update match wins
+                c.execute(
+                    """UPDATE multiplayer_rooms 
+                    SET player2_wins = player2_wins + 1,
+                        match_round = match_round + 1
+                    WHERE room_code = ?""",
+                    (room_code,))
+            else:
+                winner = room['player1']
+                c.execute(
+                    "UPDATE multiplayer_rooms SET game_state = 'finished', winner = ? WHERE room_code = ?",
+                    (winner, room_code))
+                # Update match wins
+                c.execute(
+                    """UPDATE multiplayer_rooms 
+                    SET player1_wins = player1_wins + 1,
+                        match_round = match_round + 1
+                    WHERE room_code = ?""",
+                    (room_code,))
+            
+            # Check if best of 3 is complete
+            room = get_room_state(room_code)
+            if room['player1_wins'] >= 2 or room['player2_wins'] >= 2:
+                # Match is over
+                final_winner = room['player1'] if room['player1_wins'] >= 2 else room['player2']
+                c.execute(
+                    "UPDATE multiplayer_rooms SET game_state = 'match_over', winner = ? WHERE room_code = ?",
+                    (final_winner, room_code))
+                
+                # Update user stats
+                if final_winner == room['player1']:
+                    c.execute(
+                        "UPDATE users SET multiplayer_wins = multiplayer_wins + 1 WHERE username = ?",
+                        (room['player1'],))
+                    c.execute(
+                        "UPDATE users SET multiplayer_losses = multiplayer_losses + 1 WHERE username = ?",
+                        (room['player2'],))
+                    # Award XP
+                    update_user_xp_fixed(room['player1'], 150, True)
+                    update_user_xp_fixed(room['player2'], 100, False)
+                else:
+                    c.execute(
+                        "UPDATE users SET multiplayer_wins = multiplayer_wins + 1 WHERE username = ?",
+                        (room['player2'],))
+                    c.execute(
+                        "UPDATE users SET multiplayer_losses = multiplayer_losses + 1 WHERE username = ?",
+                        (room['player1'],))
+                    # Award XP
+                    update_user_xp_fixed(room['player2'], 150, True)
+                    update_user_xp_fixed(room['player1'], 100, False)
+            else:
+                # Reset for next round
+                c.execute(
+                    """UPDATE multiplayer_rooms 
+                    SET player1_hp = 140, player2_hp = 140,
+                        player1_stamina = 100, player2_stamina = 100,
+                        player1_special = 0, player2_special = 0,
+                        player1_move = NULL, player2_move = NULL,
+                        player1_ready = 0, player2_ready = 0,
+                        current_round = 1,
+                        current_turn = 1,
+                        game_state = 'playing',
+                        winner = NULL,
+                        last_action = CURRENT_TIMESTAMP
+                    WHERE room_code = ?""",
+                    (room_code,))
+        
+        conn.commit()
+        conn.close()
+
+def get_player_profile_pic(username):
+    """Get a user's profile picture from their stats"""
+    # For now, use their level to determine which LeBron image to show
+    stats = get_user_stats(username)
+    return get_lebron_image_url(stats['level'])
+
  
  def register_user(username, password):
      hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
@@ -44,7 +400,249 @@ import random
      if result and bcrypt.checkpw(password.encode(), result[0]):
          return True
      return False
- 
+  
+ def multiplayer_ui():
+    """Display the multiplayer mode UI"""
+    # Only allow access if logged in
+    if not st.session_state.get("logged_in", False):
+        st.error("You must be logged in to play multiplayer!")
+        st.session_state.page = "Login"
+        st.rerun()
+    
+    # Initialize session state for multiplayer
+    if "multiplayer_room_code" not in st.session_state:
+        st.session_state.multiplayer_room_code = None
+        st.session_state.multiplayer_role = None  # 'host' or 'join'
+        st.session_state.multiplayer_last_update = 0
+    
+    # Room creation/joining UI
+    if not st.session_state.multiplayer_room_code:
+        st.markdown("<h1 class='game-title'>🏀 LeMultiplayer</h1>", unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### Create Room")
+            if st.button("Create New Room", use_container_width=True):
+                room_code = create_room(st.session_state.username)
+                st.session_state.multiplayer_room_code = room_code
+                st.session_state.multiplayer_role = "host"
+                st.rerun()
+        
+        with col2:
+            st.markdown("### Join Room")
+            room_code = st.text_input("Enter Room Code", max_chars=6, key="join_room_code").upper()
+            if st.button("Join Room", use_container_width=True, disabled=not room_code):
+                if join_room(room_code, st.session_state.username):
+                    st.session_state.multiplayer_room_code = room_code
+                    st.session_state.multiplayer_role = "join"
+                    st.rerun()
+                else:
+                    st.error("Could not join room. It may not exist or is full.")
+    
+    # Game room UI
+    else:
+        room = get_room_state(st.session_state.multiplayer_room_code)
+        if not room:
+            st.error("Room not found. It may have expired.")
+            st.session_state.multiplayer_room_code = None
+            st.rerun()
+        
+        # Display game state
+        st.markdown(f"<h1 class='game-title'>🏀 LeMultiplayer - Room {st.session_state.multiplayer_room_code}</h1>", unsafe_allow_html=True)
+        
+        # Show match progress (best of 3)
+        st.markdown(f"**Match Round:** {room['match_round']}/3")
+        st.markdown(f"**Score:** {room['player1']} {room['player1_wins']} - {room['player2_wins']} {room['player2'] if room['player2'] else 'Waiting...'}")
+        
+        # Show waiting screen if game hasn't started
+        if room['game_state'] == 'waiting':
+            st.markdown("### Waiting for opponent to join...")
+            st.markdown(f"Share this room code: **{st.session_state.multiplayer_room_code}**")
+            
+            if st.button("Cancel", use_container_width=True):
+                # Clean up room if host cancels
+                if st.session_state.multiplayer_role == "host":
+                    conn = sqlite3.connect("users.db")
+                    c = conn.cursor()
+                    c.execute("DELETE FROM multiplayer_rooms WHERE room_code = ?", (st.session_state.multiplayer_room_code,))
+                    conn.commit()
+                    conn.close()
+                st.session_state.multiplayer_room_code = None
+                st.rerun()
+            return
+        
+        # Determine player and opponent
+        player = "player1" if room['player1'] == st.session_state.username else "player2"
+        opponent = "player2" if player == "player1" else "player1"
+        
+        # Display player cards
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Player card
+            st.markdown(f"### You ({st.session_state.username})")
+            st.image(get_player_profile_pic(st.session_state.username), width=150)
+            
+            # Player stats
+            st.markdown(f"**Health:** {room[f'{player}_hp']}/140")
+            st.progress(room[f'{player}_hp'] / 140)
+            st.markdown(f"**Stamina:** {room[f'{player}_stamina']}/100")
+            st.progress(room[f'{player}_stamina'] / 100)
+            st.markdown(f"**Special Meter:** {room[f'{player}_special']}/100")
+            st.progress(room[f'{player}_special'] / 100)
+            
+            # Show move selection if it's the player's turn
+            if room['game_state'] == 'playing' and (
+                (player == "player1" and room['current_turn'] == 1) or 
+                (player == "player2" and room['current_turn'] == 2)
+            ):
+                st.markdown("### Your Move")
+                
+                # Check if player has already moved
+                if not room[f'{player}_ready']:
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        attack_disabled = room[f'{player}_stamina'] < 15
+                        if st.button("🏀 Attack", disabled=attack_disabled, use_container_width=True,
+                                    help="Basic attack (Cost: 15 Stamina, +10 Special Meter)"):
+                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "attack")
+                            st.rerun()
+                    
+                    with col2:
+                        defend_disabled = room[f'{player}_stamina'] < 10
+                        if st.button("🛡️ Defend", disabled=defend_disabled, use_container_width=True,
+                                    help="Reduce incoming damage by 50% (Cost: 10 Stamina, +15 Special Meter)"):
+                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "defend")
+                            st.rerun()
+                    
+                    with col3:
+                        if st.button("💤 Rest", use_container_width=True,
+                                    help="Recover 25-40 Stamina (+5 Special Meter)"):
+                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "rest")
+                            st.rerun()
+                    
+                    with col4:
+                        special_disabled = room[f'{player}_special'] < 100 or room[f'{player}_stamina'] < 25
+                        if st.button("⭐ Special", disabled=special_disabled, use_container_width=True,
+                                    help="Powerful attack (Requires: Full Special Meter, Costs: 25 Stamina)"):
+                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "special")
+                            st.rerun()
+                else:
+                    st.success("Move submitted! Waiting for opponent...")
+                
+                # Show timer
+                last_action = datetime.strptime(room['last_action'], "%Y-%m-%d %H:%M:%S")
+                time_elapsed = (datetime.now() - last_action).total_seconds()
+                time_left = max(0, 10 - time_elapsed)
+                
+                st.markdown(f"Time remaining: {int(time_left)} seconds")
+                st.progress(time_left / 10)
+                
+                if time_left <= 0:
+                    # Time's up - auto-submit a rest move
+                    update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "rest")
+                    st.rerun()
+        
+        with col2:
+            # Opponent card
+            opponent_username = room[opponent] if room[opponent] else "Waiting..."
+            st.markdown(f"### Opponent ({opponent_username})")
+            
+            if room[opponent]:
+                st.image(get_player_profile_pic(room[opponent]), width=150)
+                
+                # Opponent stats (show less info)
+                st.markdown(f"**Health:** {room[f'{opponent}_hp']}/140")
+                st.progress(room[f'{opponent}_hp'] / 140)
+                
+                # Show special meter (but not stamina)
+                st.markdown(f"**Special Meter:** {'?' if not room[f'{opponent}_ready'] else room[f'{opponent}_special']}/100")
+                if room[f'{opponent}_ready']:
+                    st.progress(room[f'{opponent}_special'] / 100)
+                else:
+                    st.progress(0)
+                
+                # Show if opponent has submitted move
+                if room['game_state'] == 'playing':
+                    if room[f'{opponent}_ready']:
+                        st.info("Opponent has submitted their move")
+                    else:
+                        st.info("Waiting for opponent's move...")
+            else:
+                st.info("Waiting for opponent to join...")
+        
+        # Process turn if both players have moved
+        if room['game_state'] == 'playing' and room['player1_ready'] and room['player2_ready']:
+            process_multiplayer_turn(st.session_state.multiplayer_room_code)
+            st.rerun()
+        
+        # Handle game over state
+        if room['game_state'] in ('finished', 'match_over'):
+            if room['game_state'] == 'match_over':
+                st.balloons()
+                if room['winner'] == st.session_state.username:
+                    st.success(f"🏆 You won the match {room['player1_wins']}-{room['player2_wins']}!")
+                else:
+                    st.error(f"💀 You lost the match {room['player1_wins']}-{room['player2_wins']}.")
+                
+                # Show XP earned
+                if room['winner'] == st.session_state.username:
+                    st.markdown("**XP Earned:** +150 XP (Match Win)")
+                else:
+                    st.markdown("**XP Earned:** +100 XP (Match Loss)")
+                
+                # Show options
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Return to Main Menu", use_container_width=True):
+                        st.session_state.multiplayer_room_code = None
+                        st.rerun()
+                with col2:
+                    if st.button("Play Again", use_container_width=True):
+                        # Both players need to agree to restart
+                        if st.session_state.multiplayer_role == "host":
+                            conn = sqlite3.connect("users.db")
+                            c = conn.cursor()
+                            c.execute(
+                                """UPDATE multiplayer_rooms 
+                                SET player1_hp = 140, player2_hp = 140,
+                                    player1_stamina = 100, player2_stamina = 100,
+                                    player1_special = 0, player2_special = 0,
+                                    player1_move = NULL, player2_move = NULL,
+                                    player1_ready = 0, player2_ready = 0,
+                                    current_round = 1,
+                                    current_turn = 1,
+                                    game_state = 'playing',
+                                    winner = NULL,
+                                    player1_wins = 0,
+                                    player2_wins = 0,
+                                    match_round = 1,
+                                    last_action = CURRENT_TIMESTAMP
+                                WHERE room_code = ?""",
+                                (st.session_state.multiplayer_room_code,))
+                            conn.commit()
+                            conn.close()
+                            st.rerun()
+                        else:
+                            st.info("Waiting for host to restart the match...")
+            else:
+                # Single round finished
+                if room['winner'] == st.session_state.username:
+                    st.success(f"🎉 You won round {room['match_round']}!")
+                elif room['winner']:
+                    st.error(f"💀 You lost round {room['match_round']}.")
+                else:
+                    st.info("🤝 Round ended in a tie!")
+                
+                st.info("Next round starting soon...")
+                time.sleep(2)
+                st.rerun()
+        
+        # Auto-refresh every 2 seconds
+        time.sleep(2)
+        st.rerun()
  
  def get_user_stats(username):
      conn = sqlite3.connect("users.db")
@@ -1960,6 +2558,7 @@ import random
  
  def main():
      init_db()
+     init_multiplayer_db()
  
      # Set default page based on login state
      if "page" not in st.session_state:
@@ -1967,7 +2566,7 @@ import random
  
      # Sidebar navigation
      if st.session_state.get("logged_in", False):
-         nav_options = ["LePlay", "LePASS", "LeLogout", "LeCareer"]
+         nav_options = ["LePlay", "LePvP", "LePASS", "LeLogout", "LeCareer"]
      else:
          nav_options = ["Login", "Register"]
  
@@ -1995,6 +2594,8 @@ import random
          lepass_ui()  # This calls the LePASS UI function you defined.
      elif st.session_state.page == "LeLogout":
          logout_ui()
+     elif st.session_state.page == "LePvP":
+         multiplayer_ui()
      elif st.session_state.page == "LeCareer":
          lecareer_ui()
  
