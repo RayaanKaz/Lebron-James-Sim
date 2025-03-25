@@ -33,16 +33,18 @@ def create_pvp_game_table():
             player2_username TEXT,
             player1_avatar TEXT,
             player2_avatar TEXT,
-            player1_level INTEGER,
-            player2_level INTEGER,
-            player1_health INTEGER DEFAULT 150,
-            player2_health INTEGER DEFAULT 150,
+            player1_health INTEGER DEFAULT 140,
+            player2_health INTEGER DEFAULT 140,
+            player1_stamina INTEGER DEFAULT 100,
+            player2_stamina INTEGER DEFAULT 100,
+            player1_special_meter INTEGER DEFAULT 0,
+            player2_special_meter INTEGER DEFAULT 0,
             current_round INTEGER DEFAULT 1,
             total_rounds INTEGER DEFAULT 3,
             game_status TEXT DEFAULT 'waiting', 
             winner_username TEXT,
             current_turn TEXT,
-            last_action_timestamp DATETIME,
+            last_action_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             player1_wins INTEGER DEFAULT 0,
             player2_wins INTEGER DEFAULT 0
         )
@@ -50,38 +52,53 @@ def create_pvp_game_table():
     conn.commit()
     conn.close()
 
+def fetch_pvp_game_state(game_code):
+    """Fetch the current state of a PvP game"""
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    c.execute('''
+        SELECT player1_username, player2_username, 
+               player1_health, player2_health,
+               player1_stamina, player2_stamina,
+               player1_special_meter, player2_special_meter,
+               current_turn, game_status, current_round, total_rounds,
+               player1_avatar, player2_avatar
+        FROM pvp_games 
+        WHERE game_code = ?
+    ''', (game_code,))
+    game_state = c.fetchone()
+    conn.close()
+    return game_state
+
 def generate_game_code():
     """Generate a unique 6-character game code"""
     return str(uuid.uuid4())[:6].upper()
 
-def create_pvp_game(player1_username):
+def create_pvp_game(player1_username, player1_avatar=None):
     """Create a new PvP game entry"""
     game_code = generate_game_code()
     
-    # Get player's avatar and level
-    player_stats = get_user_stats(player1_username)
+    # Use default avatar if not provided
+    if not player1_avatar:
+        player1_avatar = st.session_state.get('equipped_lebron', 'default_avatar')
     
     conn = sqlite3.connect("pvp_games.db")
     c = conn.cursor()
     c.execute('''
         INSERT INTO pvp_games 
-        (game_code, player1_username, player1_avatar, player1_level) 
-        VALUES (?, ?, ?, ?)
-    ''', (
-        game_code, 
-        player1_username, 
-        st.session_state.get('equipped_lebron', 'default_avatar'),
-        player_stats.get('level', 1)
-    ))
+        (game_code, player1_username, player1_avatar, last_action_timestamp) 
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ''', (game_code, player1_username, player1_avatar))
     conn.commit()
     conn.close()
     
     return game_code
 
-def join_pvp_game(game_code, player2_username):
+def join_pvp_game(game_code, player2_username, player2_avatar=None):
     """Join an existing PvP game"""
-    # Get player's avatar and level
-    player_stats = get_user_stats(player2_username)
+    # Use default avatar if not provided
+    if not player2_avatar:
+        player2_avatar = st.session_state.get('equipped_lebron', 'default_avatar')
     
     conn = sqlite3.connect("pvp_games.db")
     c = conn.cursor()
@@ -97,7 +114,7 @@ def join_pvp_game(game_code, player2_username):
         conn.close()
         return False
 
-    player1_username = game[1]  # ✅ Extract player1_username from game row
+    player1_username = game[1]  # Extract player1_username from game row
 
     # Randomly choose who goes first
     first_turn = random.choice([player1_username, player2_username])
@@ -107,15 +124,14 @@ def join_pvp_game(game_code, player2_username):
         UPDATE pvp_games 
         SET player2_username = ?, 
             player2_avatar = ?, 
-            player2_level = ?, 
             game_status = 'active',
             current_turn = ?,
-            current_round = 1
+            current_round = 1,
+            last_action_timestamp = CURRENT_TIMESTAMP
         WHERE game_code = ?
     ''', (
         player2_username, 
-        st.session_state.get('equipped_lebron', 'default_avatar'),
-        player_stats.get('level', 1),
+        player2_avatar,
         first_turn,
         game_code
     ))
@@ -714,6 +730,162 @@ def process_round():
 
     return True
 
+def check_pvp_game_winner(game_code):
+    """
+    Check if there's a winner in the PvP game
+    """
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    
+    c.execute('''
+        SELECT player1_username, player2_username, 
+               player1_health, player2_health,
+               player1_wins, player2_wins, 
+               total_rounds
+        FROM pvp_games 
+        WHERE game_code = ?
+    ''', (game_code,))
+    game = c.fetchone()
+    
+    player1, player2, p1_health, p2_health, p1_wins, p2_wins, total_rounds = game
+    
+    # Determine winner
+    winner = None
+    if p1_health == 0:
+        winner = player2
+        additional_wins = 1
+    elif p2_health == 0:
+        winner = player1
+        additional_wins = 1
+    
+    if winner:
+        # Update the winner's wins
+        if winner == player1:
+            c.execute('''
+                UPDATE pvp_games 
+                SET player1_wins = player1_wins + ?, 
+                    game_status = 'completed', 
+                    winner_username = ?
+                WHERE game_code = ?
+            ''', (additional_wins, winner, game_code))
+        else:
+            c.execute('''
+                UPDATE pvp_games 
+                SET player2_wins = player2_wins + ?, 
+                    game_status = 'completed', 
+                    winner_username = ?
+                WHERE game_code = ?
+            ''', (additional_wins, winner, game_code))
+        
+        conn.commit()
+        conn.close()
+        
+        # Reward XP for the winner
+        update_user_xp_fixed(winner, 100, won=True)
+        
+        return winner
+    
+    conn.close()
+    return None
+
+def process_pvp_round(game_code, attacker_username, defender_username, action):
+    """
+    Process a single round of PvP combat
+    
+    Args:
+    - game_code: Unique identifier for the game
+    - attacker_username: Username of the attacking player
+    - defender_username: Username of the defending player
+    - action: Player's chosen action (attack/defend/special/rest)
+    
+    Returns:
+    - Damage dealt
+    - Action result message
+    """
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    
+    # Fetch game details
+    c.execute('''
+        SELECT player1_username, player2_username, 
+               player1_health, player2_health, 
+               player1_stamina, player2_stamina,
+               player1_special_meter, player2_special_meter,
+               current_round, total_rounds
+        FROM pvp_games 
+        WHERE game_code = ?
+    ''', (game_code,))
+    game = c.fetchone()
+    
+    player1_username, player2_username, p1_health, p2_health, p1_stamina, p2_stamina, p1_special_meter, p2_special_meter, current_round, total_rounds = game
+    
+    # Determine attacker and defender details
+    is_player1_attacker = attacker_username == player1_username
+    
+    # Simulate combat logic for PvP
+    base_damage = random.randint(15, 30)
+    critical = random.random() < 0.2
+    
+    if critical:
+        base_damage = int(base_damage * 1.5)
+    
+    # Check for defending
+    if action == "defend":
+        base_damage = int(base_damage * 0.5)
+    
+    # Calculate new defender health and special updates
+    if is_player1_attacker:
+        new_defender_health = max(0, p2_health - base_damage)
+        
+        # Prepare update query for player 2 (defender)
+        c.execute('''
+            UPDATE pvp_games 
+            SET player2_health = ?, 
+                player2_stamina = ?, 
+                player2_special_meter = ?,
+                current_turn = ?, 
+                current_round = current_round + 1,
+                last_action_timestamp = CURRENT_TIMESTAMP
+            WHERE game_code = ?
+        ''', (
+            new_defender_health, 
+            max(0, p2_stamina - 15),  # Reduce stamina for getting hit
+            min(100, p2_special_meter + 10),  # Increase special meter
+            player1_username,  # Next turn goes to player 1
+            game_code
+        ))
+    else:
+        new_defender_health = max(0, p1_health - base_damage)
+        
+        # Prepare update query for player 1 (defender)
+        c.execute('''
+            UPDATE pvp_games 
+            SET player1_health = ?, 
+                player1_stamina = ?, 
+                player1_special_meter = ?,
+                current_turn = ?, 
+                current_round = current_round + 1,
+                last_action_timestamp = CURRENT_TIMESTAMP
+            WHERE game_code = ?
+        ''', (
+            new_defender_health, 
+            max(0, p1_stamina - 15),  # Reduce stamina for getting hit
+            min(100, p1_special_meter + 10),  # Increase special meter
+            player2_username,  # Next turn goes to player 2
+            game_code
+        ))
+    
+    conn.commit()
+    conn.close()
+    
+    # Determine result message
+    result_msg = f"{attacker_username} deals {base_damage} damage to {defender_username}!"
+    
+    # Check for potential game-ending condition
+    check_pvp_game_winner(game_code)
+    
+    return base_damage, result_msg
+
 def xp_required_for_level(level):
     """
     Calculate XP required for a given level with tiered progression:
@@ -1261,6 +1433,159 @@ def login_ui():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+def active_pvp_page():
+    st.title("🥊 LeBattle PvP Arena")
+    
+    # Ensure game code exists
+    if 'active_pvp_code' not in st.session_state:
+        st.error("No active game found. Please create or join a game.")
+        return
+    
+    game_code = st.session_state.active_pvp_code
+    
+    # Fetch game state
+    game_state = fetch_pvp_game_state(game_code)
+    
+    if not game_state:
+        st.error("Game not found. Please start a new game.")
+        return
+    
+    # Unpack game state
+    (player1, player2, p1_health, p2_health, 
+     p1_stamina, p2_stamina, p1_special, p2_special, 
+     current_turn, game_status, current_round, total_rounds,
+     p1_avatar, p2_avatar) = game_state
+    
+    # Check game status
+    if game_status != 'active':
+        st.warning(f"Game status: {game_status}")
+        return
+    
+    # Determine player's perspective
+    is_player1 = st.session_state.username == player1
+    is_player2 = st.session_state.username == player2
+    
+    if not (is_player1 or is_player2):
+        st.error("You are not a participant in this game.")
+        return
+    
+    # Determine current player's details
+    if is_player1:
+        current_player_health = p1_health
+        current_player_stamina = p1_stamina
+        current_player_special = p1_special
+        opponent_health = p2_health
+        opponent_username = player2
+        opponent_avatar = p2_avatar
+    else:
+        current_player_health = p2_health
+        current_player_stamina = p2_stamina
+        current_player_special = p2_special
+        opponent_health = p1_health
+        opponent_username = player1
+        opponent_avatar = p1_avatar
+    
+    # Check if it's the current player's turn
+    is_current_player_turn = current_turn == st.session_state.username
+    
+    # Battle UI
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"### 🏀 {st.session_state.username}")
+        st.progress(current_player_health / 140.0, text=f"Health: {current_player_health}/140")
+        st.progress(current_player_stamina / 100.0, text=f"Stamina: {current_player_stamina}/100")
+        st.progress(current_player_special / 100.0, text=f"Special: {current_player_special}/100")
+    
+    with col2:
+        st.markdown(f"### 🏀 {opponent_username}")
+        st.progress(opponent_health / 140.0, text=f"Health: {opponent_health}/140")
+    
+    st.markdown(f"**Round {current_round}**")
+    
+    # Action buttons
+    if is_current_player_turn:
+        action_col1, action_col2, action_col3, action_col4 = st.columns(4)
+        
+        with action_col1:
+            attack_button = st.button("⚡ Attack", use_container_width=True)
+        
+        with action_col2:
+            defend_button = st.button("🛡️ Defend", use_container_width=True)
+        
+        with action_col3:
+            special_button = st.button("💥 Special Attack", use_container_width=True, 
+                                       disabled=current_player_special < 100)
+        
+        with action_col4:
+            rest_button = st.button("💤 Rest", use_container_width=True)
+        
+        # Process actions
+        if attack_button:
+            damage, result_msg = process_pvp_round(game_code, st.session_state.username, opponent_username, "attack")
+            st.toast(result_msg, icon="⚔️")
+        
+        elif defend_button:
+            damage, result_msg = process_pvp_round(game_code, st.session_state.username, opponent_username, "defend")
+            st.toast(result_msg, icon="🛡️")
+        
+        elif special_button:
+            damage, result_msg = process_pvp_round(game_code, st.session_state.username, opponent_username, "special")
+            st.toast(result_msg, icon="💥")
+        
+        elif rest_button:
+            damage, result_msg = process_pvp_round(game_code, st.session_state.username, opponent_username, "rest")
+            st.toast(result_msg, icon="💤")
+    else:
+        st.warning(f"Waiting for {current_turn} to make a move...")
+        
+        # Add a timer or countdown
+        conn = sqlite3.connect("pvp_games.db")
+        c = conn.cursor()
+        c.execute('SELECT last_action_timestamp FROM pvp_games WHERE game_code = ?', (game_code,))
+        last_action_time = c.fetchone()[0]
+        conn.close()
+        
+        # Convert timestamp to seconds and calculate remaining time
+        current_time = time.time()
+        last_action_seconds = time.mktime(time.strptime(last_action_time, "%Y-%m-%d %H:%M:%S"))
+        time_elapsed = current_time - last_action_seconds
+        time_remaining = max(0, 30 * 60 - time_elapsed)  # 30 minutes timeout
+        
+        st.progress(time_elapsed / (30 * 60), text=f"Time Remaining: {int(time_remaining // 60)} mins")
+    
+    # Check for game winner
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+    c.execute('SELECT game_status, winner_username FROM pvp_games WHERE game_code = ?', (game_code,))
+    game_status, winner = c.fetchone()
+    conn.close()
+    
+    if game_status == 'completed':
+        st.success(f"🏆 {winner} wins the game!")
+        if st.button("Return to Battle Menu"):
+            st.session_state.page = "LePvPBattle"
+            st.rerun()
+
+def expire_inactive_pvp_games(timeout_minutes=30):
+    """Expire games that have been inactive too long"""
+    now = time.time()
+    cutoff = now - (timeout_minutes * 60)
+
+    conn = sqlite3.connect("pvp_games.db")
+    c = conn.cursor()
+
+    # Update games that are too old to 'expired' 
+    c.execute('''
+        UPDATE pvp_games
+        SET game_status = 'expired'
+        WHERE game_status != 'completed' 
+        AND (strftime('%s', last_action_timestamp) < ?)
+    ''', (int(cutoff),))
+    
+    conn.commit()
+    conn.close()
+
 def lepass_ui():
     """Display the LePASS progression UI with gallery of unlocked LeBron images"""
 
@@ -1453,7 +1778,9 @@ def lepass_ui():
 def pvp_battle_page():
     st.title("🥊 Player vs Player Battle")
 
+    # Periodic expiration of inactive games
     expire_inactive_pvp_games()
+    
     # Authentication check
     if 'username' not in st.session_state:
         st.warning("Please log in first!")
@@ -1474,20 +1801,18 @@ def pvp_battle_page():
             st.session_state.active_pvp_code = game_code
             st.session_state.page = "LePvPActive"
             st.rerun()
-            
     else:  # Join Game
         game_code = st.sidebar.text_input("Enter Game Code")
         
         if st.sidebar.button("Join Game"):
             success = join_pvp_game(game_code, st.session_state.username)
-            
             if success:
                 st.sidebar.success("Successfully joined the game!")
                 st.session_state.active_pvp_code = game_code
                 st.session_state.page = "LePvPActive"
                 st.rerun()
-                
-    # Display active/waiting games
+    
+    # Display active games with correct status
     st.sidebar.subheader("Active Games")
     conn = sqlite3.connect("pvp_games.db")
     c = conn.cursor()
@@ -1506,25 +1831,9 @@ def pvp_battle_page():
         - Host: {host}
         - Status: {status}
         """)
-    
-def expire_inactive_pvp_games(timeout_minutes=30):
-    """Expire games that have been inactive too long"""
-    now = time.time()
-    cutoff = now - (timeout_minutes * 60)
 
-    conn = sqlite3.connect("pvp_games.db")
-    c = conn.cursor()
-
-    c.execute('''
-        UPDATE pvp_games
-        SET game_status = 'expired'
-        WHERE game_status = 'active' 
-        AND (strftime('%s', last_action_timestamp) < ?)
-    ''', (int(cutoff),))
-    
-    conn.commit()
-    conn.close()
-
+# Initialize the PvP game table when the module is first loaded
+create_pvp_game_table()
 
 def process_pvp_round(game_code, attacker, defender, action):
     """
@@ -1600,52 +1909,6 @@ def process_pvp_round(game_code, attacker, defender, action):
         return base_damage, f"{attacker} wins the round!"
     
     return base_damage, f"{attacker} deals {base_damage} damage to {defender}!"
-
-def check_pvp_game_winner(game_code):
-    """
-    Check if a player has won the best-of-3 series
-    
-    Returns:
-    - Winner's username or None
-    """
-    conn = sqlite3.connect("pvp_games.db")
-    c = conn.cursor()
-    
-    c.execute('''
-        SELECT player1_username, player2_username, 
-               player1_wins, player2_wins, 
-               total_rounds
-        FROM pvp_games 
-        WHERE game_code = ?
-    ''', (game_code,))
-    game = c.fetchone()
-    
-    player1, player2, p1_wins, p2_wins, total_rounds = game
-    
-    winner = None
-    if p1_wins >= (total_rounds // 2 + 1):
-        winner = player1
-    elif p2_wins >= (total_rounds // 2 + 1):
-        winner = player2
-    
-    if winner:
-        # Update game status
-        c.execute('''
-            UPDATE pvp_games 
-            SET game_status = 'completed', 
-                winner_username = ?
-            WHERE game_code = ?
-        ''', (winner, game_code))
-        conn.commit()
-        conn.close()
-    
-        # ✅ Reward XP here
-        reward_pvp_winner(game_code)
-        
-        return winner
-
-# Initialize PvP game database
-create_pvp_game_table()
 
 def lecareer_ui():
     """Display the LeCareer page showing LeBron's career journey with text and images"""
@@ -2281,31 +2544,30 @@ st.markdown("""
 
 def main():
     init_db()
-
     # Set default page based on login state
     if "page" not in st.session_state:
         st.session_state.page = "Login" if not st.session_state.get("logged_in", False) else "LePlay"
-
+    
     # Sidebar navigation
     if st.session_state.get("logged_in", False):
         nav_options = ["LePlay", "LePASS", "LeLogout", "LeCareer", "PvP"]
     else:
         nav_options = ["Login", "Register"]
-
-
+    
     # Add some space at the top of the sidebar for the image effect
     st.sidebar.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
-
+    
     # Sidebar navigation with styled title
     st.sidebar.markdown("<h2 style='color: white; text-align: center; text-shadow: 2px 2px 4px black;'>LeBattle Sim</h2>", unsafe_allow_html=True)
-
+    
     selected_page = st.sidebar.radio("", nav_options, index=nav_options.index(st.session_state.page) if st.session_state.page in nav_options else 0)
     st.session_state.page = selected_page
-
+    
     # User status
     if st.session_state.get("logged_in", False):
         st.sidebar.markdown(f"<div style='color: white; text-align: center; margin-top: 20px; padding: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px;'>Logged in as: <b>{st.session_state['username']}</b></div>", unsafe_allow_html=True)
-
+    
+    # Page routing
     if st.session_state.page == "Login":
         login_ui()
     elif st.session_state.page == "Register":
@@ -2313,13 +2575,15 @@ def main():
     elif st.session_state.page == "LePlay":
         play_ui()
     elif st.session_state.page == "LePASS":
-        lepass_ui()  # This calls the LePASS UI function you defined.
+        lepass_ui()
     elif st.session_state.page == "LeLogout":
         logout_ui()
     elif st.session_state.page == "LeCareer":
         lecareer_ui()
     elif st.session_state.page == "PvP":
         pvp_battle_page()
+    elif st.session_state.page == "LePvPActive":
+        render_active_pvp_battle()
 
 if __name__ == "__main__":
     main()
