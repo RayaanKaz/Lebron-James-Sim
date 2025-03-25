@@ -96,7 +96,7 @@ def create_room(player_username):
     finally:
         conn.close()
    
- def join_room(room_code, player_username):
+def join_room(room_code, player_username):
     """Join an existing room as player 2"""
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
@@ -377,7 +377,7 @@ def get_player_profile_pic(username):
     return get_lebron_image_url(stats['level'])
 
  
- def register_user(username, password):
+def register_user(username, password):
      hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
      conn = sqlite3.connect("users.db")
      c = conn.cursor()
@@ -391,7 +391,7 @@ def get_player_profile_pic(username):
      finally:
          conn.close()
  
- def authenticate_user(username, password):
+def authenticate_user(username, password):
      conn = sqlite3.connect("users.db")
      c = conn.cursor()
      c.execute("SELECT password FROM users WHERE username = ?", (username,))
@@ -401,7 +401,7 @@ def get_player_profile_pic(username):
          return True
      return False
   
- def multiplayer_ui():
+def multiplayer_ui():
     """Display the multiplayer mode UI"""
     # Only allow access if logged in
     if not st.session_state.get("logged_in", False):
@@ -644,7 +644,7 @@ def get_player_profile_pic(username):
         time.sleep(2)
         st.rerun()
  
- def get_user_stats(username):
+def get_user_stats(username):
      conn = sqlite3.connect("users.db")
      c = conn.cursor()
      c.execute("SELECT xp, level, wins, losses FROM users WHERE username = ?", (username,))
@@ -660,7 +660,7 @@ def get_player_profile_pic(username):
      return {"xp": 0, "level": 1, "wins": 0, "losses": 0}
  
  
- def update_user_xp_fixed(username, xp_earned, won=False):
+def update_user_xp_fixed(username, xp_earned, won=False):
      """Update user XP, wins, and losses with better error handling"""
      conn = sqlite3.connect("users.db")
      c = conn.cursor()
@@ -1036,7 +1036,7 @@ def get_player_profile_pic(username):
                  self.health = 0
              return f"{self.name} takes {damage} damage!"
  
- def display_character_card(character, is_player=True):
+def display_character_card(character, is_player=True):
      card_class = "player-card" if is_player else "lebron-card"
      col1, col2 = st.columns([1, 2])
      with col1:
@@ -1059,7 +1059,7 @@ def get_player_profile_pic(username):
          if character.is_defending:
              st.markdown("🛡️ **Defending**")
  
- def initialize_session_state():
+def initialize_session_state():
      if "game_started" not in st.session_state:
          st.session_state.game_started = False
      if "difficulty" not in st.session_state:
@@ -1085,7 +1085,7 @@ def get_player_profile_pic(username):
      if "tutorial_shown" not in st.session_state:
          st.session_state.tutorial_shown = False
  
- def add_log_entry(message, entry_type="system"):
+def add_log_entry(message, entry_type="system"):
      timestamp = time.strftime("%H:%M:%S")
      st.session_state.log.append({
          "message": message,
@@ -1093,7 +1093,7 @@ def get_player_profile_pic(username):
          "timestamp": timestamp
      })
  
- def display_battle_log():
+def display_battle_log():
      st.markdown("### 📜 Battle Log")
      with st.container():
          for entry in reversed(st.session_state.log):
@@ -1103,7 +1103,7 @@ def get_player_profile_pic(username):
              else:
                  st.markdown(f"<div class='log-entry system-log'><small>Unknown time</small> {entry}</div>", unsafe_allow_html=True)
  
- def lebron_turn():
+def lebron_turn():
      lebron = st.session_state.lebron
      player = st.session_state.player
      action = lebron.choose_action()
@@ -1135,7 +1135,7 @@ def get_player_profile_pic(username):
          add_log_entry(f"Round {st.session_state.round} begins!", "system")
      return True
  
- def process_round():
+def process_round():
      """Process both player and LeBron actions simultaneously in one round"""
      player = st.session_state.player
      lebron = st.session_state.lebron
@@ -1208,7 +1208,7 @@ def get_player_profile_pic(username):
  
      return True
  
- def xp_required_for_level(level):
+def xp_required_for_level(level):
      """
      Calculate XP required for a given level with tiered progression:
      - Levels 1-10: Increase by 100 XP per level
@@ -1244,7 +1244,7 @@ def get_player_profile_pic(username):
              multiplier = 1.5 ** (level - 50)
              return int(base_xp + 500 + (level - 50) * 200 * multiplier)
  
- def calculate_xp_reward(player_health, lebron_health, difficulty, won):
+def calculate_xp_reward(player_health, lebron_health, difficulty, won):
      """
      Calculate XP based on:
      - Battle outcome (win/loss)
@@ -1275,7 +1275,7 @@ def get_player_profile_pic(username):
      # Ensure minimum XP for participation
      return max(10, total_xp)
  
- def get_level_progress(current_xp, current_level):
+def get_level_progress(current_xp, current_level):
      """Calculate progress percentage to next level"""
      current_level_xp = xp_required_for_level(current_level)
      next_level_xp = xp_required_for_level(current_level + 1)
@@ -1286,7 +1286,7 @@ def get_player_profile_pic(username):
      progress = xp_gained_in_level / xp_for_this_level if xp_for_this_level > 0 else 1.0
      return min(1.0, max(0.0, progress))  # Ensure between 0 and 1
  
- def get_lebron_image_url(level):
+def get_lebron_image_url(level):
      """Get the LeBron image URL for a specific level"""
      # This function would return different LeBron images based on level
      # In a real implementation, you'd have a list of 60 LeBron image URLs
@@ -1364,7 +1364,7 @@ def get_player_profile_pic(username):
      return lebron_images[image_index]
  
  # In the end_battle_with_xp function, add a flag to check if XP was already awarded
- def end_battle_with_xp(player, lebron, won):
+def end_battle_with_xp(player, lebron, won):
      """Update XP, wins, and losses after battle completion"""
      # Check if XP was already awarded for this battle
      if hasattr(st.session_state, 'xp_already_awarded') and st.session_state.xp_already_awarded:
@@ -1402,7 +1402,7 @@ def get_player_profile_pic(username):
      return updated_stats
  
  
- def add_lepass_css():
+def add_lepass_css():
      """Add LePASS-specific CSS styles"""
  
      st.markdown("""
@@ -1515,7 +1515,7 @@ def get_player_profile_pic(username):
      </style>
      """, unsafe_allow_html=True)
  
- def display_game():
+def display_game():
      st.markdown("<h1 class='game-title'>🏀 LeBron Boss Battle</h1>", unsafe_allow_html=True)
      player = st.session_state.player
      lebron = st.session_state.lebron
@@ -1668,7 +1668,7 @@ def get_player_profile_pic(username):
  
      display_battle_log()
  
- def display_difficulty_selection():
+def display_difficulty_selection():
      st.markdown("<h1 class='game-title'>LeBron Boss Battle</h1>", unsafe_allow_html=True)
  
      col1, col2, col3 = st.columns([1, 2, 1])
@@ -1715,7 +1715,7 @@ def get_player_profile_pic(username):
  
  # --------------------- Page UIs --------------------- #
  
- def login_ui():
+def login_ui():
      st.markdown("<h1 class='auth-title'>Welcome Back</h1>", unsafe_allow_html=True)
      st.markdown("<p class='auth-subtitle'>Sign in to continue your battle</p>", unsafe_allow_html=True)
      st.markdown("</div>", unsafe_allow_html=True)
@@ -1755,7 +1755,7 @@ def get_player_profile_pic(username):
  
      st.markdown("</div>", unsafe_allow_html=True)
  
- def lepass_ui():
+def lepass_ui():
      """Display the LePASS progression UI with gallery of unlocked LeBron images"""
  
      # Only allow access if logged in
@@ -1944,7 +1944,7 @@ def get_player_profile_pic(username):
          st.session_state.page = "LePlay"
          st.rerun()
  
- def lecareer_ui():
+def lecareer_ui():
      """Display the LeCareer page showing LeBron's career journey with text and images"""
      
      # Only allow access if logged in
@@ -2294,7 +2294,7 @@ def get_player_profile_pic(username):
          st.session_state.page = "LePlay"
          st.rerun()
  
- def register_ui():
+def register_ui():
      st.markdown("<h1 class='auth-title'>Create Account</h1>", unsafe_allow_html=True)
      st.markdown("<p class='auth-subtitle'>Join the battle against LeBron</p>", unsafe_allow_html=True)
      st.markdown("</div>", unsafe_allow_html=True)
@@ -2332,7 +2332,7 @@ def get_player_profile_pic(username):
  
      st.markdown("</div>", unsafe_allow_html=True)
  
- def logout_ui():
+def logout_ui():
      st.markdown("<h1 class='auth-title'>Log Out</h1>", unsafe_allow_html=True)
      st.markdown("<p class='auth-subtitle'>Are you sure you want to leave?</p>", unsafe_allow_html=True)
      st.markdown("</div>", unsafe_allow_html=True)
@@ -2357,7 +2357,7 @@ def get_player_profile_pic(username):
  
      st.markdown("</div>", unsafe_allow_html=True)
  
- def play_ui():
+def play_ui():
      # Only allow access if logged in
      if not st.session_state.get("logged_in", False):
          st.error("You must be logged in to play!")
@@ -2556,7 +2556,7 @@ def get_player_profile_pic(username):
  
  # --------------------- Main Navigation --------------------- #
  
- def main():
+def main():
      init_db()
      init_multiplayer_db()
  
