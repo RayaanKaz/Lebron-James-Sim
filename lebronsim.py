@@ -7,10 +7,12 @@ from PIL import Image
 from datetime import datetime, timedelta
 import time
 
+
 def init_db():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
-    c.execute('''
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password BLOB,
@@ -19,16 +21,19 @@ def init_db():
             wins INTEGER DEFAULT 0,
             losses INTEGER DEFAULT 0
         )
-    ''')
+    """
+    )
     conn.commit()
     conn.close()
 
- def init_multiplayer_db():
+
+def init_multiplayer_db():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
 
     # Rooms table
-    c.execute('''
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS multiplayer_rooms (
             room_code TEXT PRIMARY KEY,
             player1 TEXT,
@@ -53,26 +58,34 @@ def init_db():
             player2_wins INTEGER DEFAULT 0,
             match_round INTEGER DEFAULT 1  # For best of 3
         )
-    ''')
+    """
+    )
 
     # Add multiplayer stats to users table
     try:
-        c.execute("ALTER TABLE users ADD COLUMN multiplayer_wins INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN multiplayer_losses INTEGER DEFAULT 0")
+        c.execute(
+            "ALTER TABLE users ADD COLUMN multiplayer_wins INTEGER DEFAULT 0"
+        )
+        c.execute(
+            "ALTER TABLE users ADD COLUMN multiplayer_losses INTEGER DEFAULT 0"
+        )
     except sqlite3.OperationalError:
         pass  # Columns already exist
 
     conn.commit()
     conn.close()
 
+
 # Add this to the init_db() function
 init_multiplayer_db()
+
 
 # Add these multiplayer utility functions
 def generate_room_code():
     """Generate a 6-character room code"""
     chars = string.ascii_uppercase + string.digits
-    return ''.join(random.choice(chars) for _ in range(6))
+    return "".join(random.choice(chars) for _ in range(6))
+
 
 def create_room(player_username):
     """Create a new multiplayer room"""
@@ -81,12 +94,14 @@ def create_room(player_username):
     c = conn.cursor()
 
     # Clean up old rooms (older than 2 hours)
-    c.execute("DELETE FROM multiplayer_rooms WHERE created_at < datetime('now', '-2 hours')")
+    c.execute(
+        "DELETE FROM multiplayer_rooms WHERE created_at < datetime('now', '-2 hours')"
+    )
 
     try:
         c.execute(
             "INSERT INTO multiplayer_rooms (room_code, player1, game_state) VALUES (?, ?, 'waiting')",
-            (room_code, player_username)
+            (room_code, player_username),
         )
         conn.commit()
         return room_code
@@ -96,26 +111,30 @@ def create_room(player_username):
     finally:
         conn.close()
 
- def join_room(room_code, player_username):
+
+def join_room(room_code, player_username):
     """Join an existing room as player 2"""
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
 
     c.execute(
         "UPDATE multiplayer_rooms SET player2 = ?, game_state = 'playing' WHERE room_code = ? AND player2 IS NULL",
-        (player_username, room_code)
+        (player_username, room_code),
     )
     conn.commit()
     success = c.rowcount > 0
     conn.close()
     return success
 
+
 def get_room_state(room_code):
     """Get current state of a room"""
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
 
-    c.execute("SELECT * FROM multiplayer_rooms WHERE room_code = ?", (room_code,))
+    c.execute(
+        "SELECT * FROM multiplayer_rooms WHERE room_code = ?", (room_code,)
+    )
     result = c.fetchone()
     conn.close()
 
@@ -123,6 +142,7 @@ def get_room_state(room_code):
         columns = [col[0] for col in c.description]
         return dict(zip(columns, result))
     return None
+
 
 def update_player_move(room_code, player_username, move):
     """Update a player's move in the room"""
@@ -133,15 +153,15 @@ def update_player_move(room_code, player_username, move):
     if not room:
         return False
 
-    if room['player1'] == player_username:
+    if room["player1"] == player_username:
         c.execute(
             "UPDATE multiplayer_rooms SET player1_move = ?, player1_ready = 1, last_action = CURRENT_TIMESTAMP WHERE room_code = ?",
-            (move, room_code)
+            (move, room_code),
         )
-    elif room['player2'] == player_username:
+    elif room["player2"] == player_username:
         c.execute(
             "UPDATE multiplayer_rooms SET player2_move = ?, player2_ready = 1, last_action = CURRENT_TIMESTAMP WHERE room_code = ?",
-            (move, room_code)
+            (move, room_code),
         )
     else:
         conn.close()
@@ -150,6 +170,7 @@ def update_player_move(room_code, player_username, move):
     conn.commit()
     conn.close()
     return True
+
 
 def reset_round(room_code):
     """Reset the room for a new round"""
@@ -163,25 +184,26 @@ def reset_round(room_code):
             current_turn = 1,
             last_action = CURRENT_TIMESTAMP
         WHERE room_code = ?""",
-        (room_code,)
+        (room_code,),
     )
     conn.commit()
     conn.close()
 
+
 def process_multiplayer_turn(room_code):
     """Process a completed turn in multiplayer"""
     room = get_room_state(room_code)
-    if not room or room['game_state'] != 'playing':
+    if not room or room["game_state"] != "playing":
         return
 
     # Both players have made their moves
-    if room['player1_move'] and room['player2_move']:
+    if room["player1_move"] and room["player2_move"]:
         conn = sqlite3.connect("users.db")
         c = conn.cursor()
 
         # Process moves (similar to single player but for both players)
-        p1_move = room['player1_move']
-        p2_move = room['player2_move']
+        p1_move = room["player1_move"]
+        p2_move = room["player2_move"]
 
         # Initialize damage values
         p1_damage = 0
@@ -189,7 +211,7 @@ def process_multiplayer_turn(room_code):
 
         # Process player 1's move
         if p1_move == "attack":
-            if room['player1_stamina'] >= 15:
+            if room["player1_stamina"] >= 15:
                 p1_damage = random.randint(15, 30)
                 # Critical hit chance
                 if random.random() < 0.2:
@@ -200,16 +222,16 @@ def process_multiplayer_turn(room_code):
                     SET player1_stamina = player1_stamina - 15,
                         player1_special = LEAST(player1_special + 10, 100)
                     WHERE room_code = ?""",
-                    (room_code,)
+                    (room_code,),
                 )
         elif p1_move == "defend":
-            if room['player1_stamina'] >= 10:
+            if room["player1_stamina"] >= 10:
                 c.execute(
                     """UPDATE multiplayer_rooms 
                     SET player1_stamina = player1_stamina - 10,
                         player1_special = LEAST(player1_special + 15, 100)
                     WHERE room_code = ?""",
-                    (room_code,)
+                    (room_code,),
                 )
         elif p1_move == "rest":
             stamina_gain = random.randint(25, 40)
@@ -218,22 +240,25 @@ def process_multiplayer_turn(room_code):
                 SET player1_stamina = LEAST(player1_stamina + ?, 100),
                     player1_special = LEAST(player1_special + 5, 100)
                 WHERE room_code = ?""",
-                (stamina_gain, room_code)
+                (stamina_gain, room_code),
             )
         elif p1_move == "special":
-            if room['player1_special'] >= 100 and room['player1_stamina'] >= 25:
+            if (
+                room["player1_special"] >= 100
+                and room["player1_stamina"] >= 25
+            ):
                 p1_damage = random.randint(40, 60)
                 c.execute(
                     """UPDATE multiplayer_rooms 
                     SET player1_special = 0,
                         player1_stamina = GREATEST(player1_stamina - 25, 0)
                     WHERE room_code = ?""",
-                    (room_code,)
+                    (room_code,),
                 )
 
         # Process player 2's move
         if p2_move == "attack":
-            if room['player2_stamina'] >= 15:
+            if room["player2_stamina"] >= 15:
                 p2_damage = random.randint(15, 30)
                 # Critical hit chance
                 if random.random() < 0.2:
@@ -244,16 +269,16 @@ def process_multiplayer_turn(room_code):
                     SET player2_stamina = player2_stamina - 15,
                         player2_special = LEAST(player2_special + 10, 100)
                     WHERE room_code = ?""",
-                    (room_code,)
+                    (room_code,),
                 )
         elif p2_move == "defend":
-            if room['player2_stamina'] >= 10:
+            if room["player2_stamina"] >= 10:
                 c.execute(
                     """UPDATE multiplayer_rooms 
                     SET player2_stamina = player2_stamina - 10,
                         player2_special = LEAST(player2_special + 15, 100)
                     WHERE room_code = ?""",
-                    (room_code,)
+                    (room_code,),
                 )
         elif p2_move == "rest":
             stamina_gain = random.randint(25, 40)
@@ -262,23 +287,26 @@ def process_multiplayer_turn(room_code):
                 SET player2_stamina = LEAST(player2_stamina + ?, 100),
                     player2_special = LEAST(player2_special + 5, 100)
                 WHERE room_code = ?""",
-                (stamina_gain, room_code)
+                (stamina_gain, room_code),
             )
         elif p2_move == "special":
-            if room['player2_special'] >= 100 and room['player2_stamina'] >= 25:
+            if (
+                room["player2_special"] >= 100
+                and room["player2_stamina"] >= 25
+            ):
                 p2_damage = random.randint(40, 60)
                 c.execute(
                     """UPDATE multiplayer_rooms 
                     SET player2_special = 0,
                         player2_stamina = GREATEST(player2_stamina - 25, 0)
                     WHERE room_code = ?""",
-                    (room_code,)
+                    (room_code,),
                 )
 
         # Apply damage (considering defense)
-        if p1_move == "defend" and room['player1_stamina'] >= 10:
+        if p1_move == "defend" and room["player1_stamina"] >= 10:
             p2_damage = int(p2_damage * 0.5)
-        if p2_move == "defend" and room['player2_stamina'] >= 10:
+        if p2_move == "defend" and room["player2_stamina"] >= 10:
             p1_damage = int(p1_damage * 0.5)
 
         # Update health
@@ -294,21 +322,21 @@ def process_multiplayer_turn(room_code):
                 current_turn = CASE WHEN current_turn = 1 THEN 2 ELSE 1 END,
                 last_action = CURRENT_TIMESTAMP
             WHERE room_code = ?""",
-            (p2_damage, p1_damage, room_code)
+            (p2_damage, p1_damage, room_code),
         )
 
         # Check for winner
         room = get_room_state(room_code)
-        if room['player1_hp'] <= 0 or room['player2_hp'] <= 0:
+        if room["player1_hp"] <= 0 or room["player2_hp"] <= 0:
             winner = None
-            if room['player1_hp'] <= 0 and room['player2_hp'] <= 0:
+            if room["player1_hp"] <= 0 and room["player2_hp"] <= 0:
                 # Tie
                 pass
-            elif room['player1_hp'] <= 0:
-                winner = room['player2']
+            elif room["player1_hp"] <= 0:
+                winner = room["player2"]
                 c.execute(
                     "UPDATE multiplayer_rooms SET game_state = 'finished', winner = ? WHERE room_code = ?",
-                    (winner, room_code)
+                    (winner, room_code),
                 )
                 # Update match wins
                 c.execute(
@@ -316,13 +344,13 @@ def process_multiplayer_turn(room_code):
                     SET player2_wins = player2_wins + 1,
                         match_round = match_round + 1
                     WHERE room_code = ?""",
-                    (room_code,)
+                    (room_code,),
                 )
             else:
-                winner = room['player1']
+                winner = room["player1"]
                 c.execute(
                     "UPDATE multiplayer_rooms SET game_state = 'finished', winner = ? WHERE room_code = ?",
-                    (winner, room_code)
+                    (winner, room_code),
                 )
                 # Update match wins
                 c.execute(
@@ -330,44 +358,48 @@ def process_multiplayer_turn(room_code):
                     SET player1_wins = player1_wins + 1,
                         match_round = match_round + 1
                     WHERE room_code = ?""",
-                    (room_code,)
+                    (room_code,),
                 )
 
             # Check if best of 3 is complete
             room = get_room_state(room_code)
-            if room['player1_wins'] >= 2 or room['player2_wins'] >= 2:
+            if room["player1_wins"] >= 2 or room["player2_wins"] >= 2:
                 # Match is over
-                final_winner = room['player1'] if room['player1_wins'] >= 2 else room['player2']
+                final_winner = (
+                    room["player1"]
+                    if room["player1_wins"] >= 2
+                    else room["player2"]
+                )
                 c.execute(
                     "UPDATE multiplayer_rooms SET game_state = 'match_over', winner = ? WHERE room_code = ?",
-                    (final_winner, room_code)
+                    (final_winner, room_code),
                 )
 
                 # Update user stats
-                if final_winner == room['player1']:
+                if final_winner == room["player1"]:
                     c.execute(
                         "UPDATE users SET multiplayer_wins = multiplayer_wins + 1 WHERE username = ?",
-                        (room['player1'],)
+                        (room["player1"],),
                     )
                     c.execute(
                         "UPDATE users SET multiplayer_losses = multiplayer_losses + 1 WHERE username = ?",
-                        (room['player2'],)
+                        (room["player2"],),
                     )
                     # Award XP
-                    update_user_xp_fixed(room['player1'], 150, True)
-                    update_user_xp_fixed(room['player2'], 100, False)
+                    update_user_xp_fixed(room["player1"], 150, True)
+                    update_user_xp_fixed(room["player2"], 100, False)
                 else:
                     c.execute(
                         "UPDATE users SET multiplayer_wins = multiplayer_wins + 1 WHERE username = ?",
-                        (room['player2'],)
+                        (room["player2"],),
                     )
                     c.execute(
                         "UPDATE users SET multiplayer_losses = multiplayer_losses + 1 WHERE username = ?",
-                        (room['player1'],)
+                        (room["player1"],),
                     )
                     # Award XP
-                    update_user_xp_fixed(room['player2'], 150, True)
-                    update_user_xp_fixed(room['player1'], 100, False)
+                    update_user_xp_fixed(room["player2"], 150, True)
+                    update_user_xp_fixed(room["player1"], 100, False)
             else:
                 # Reset for next round
                 c.execute(
@@ -383,43 +415,49 @@ def process_multiplayer_turn(room_code):
                         winner = NULL,
                         last_action = CURRENT_TIMESTAMP
                     WHERE room_code = ?""",
-                    (room_code,)
+                    (room_code,),
                 )
 
         conn.commit()
         conn.close()
 
+
 def get_player_profile_pic(username):
     """Get a user's profile picture from their stats"""
     # For now, use their level to determine which LeBron image to show
     stats = get_user_stats(username)
-    return get_lebron_image_url(stats['level'])
+    return get_lebron_image_url(stats["level"])
 
- def register_user(username, password):
-     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-     conn = sqlite3.connect("users.db")
-     c = conn.cursor()
-     try:
-         c.execute("INSERT INTO users (username, password, xp, level, wins, losses) VALUES (?, ?, 0, 1, 0, 0)", 
-                  (username, hashed_pw))
-         conn.commit()
-         return True
-     except sqlite3.IntegrityError:
-         return False
-     finally:
-         conn.close()
 
- def authenticate_user(username, password):
-     conn = sqlite3.connect("users.db")
-     c = conn.cursor()
-     c.execute("SELECT password FROM users WHERE username = ?", (username,))
-     result = c.fetchone()
-     conn.close()
-     if result and bcrypt.checkpw(password.encode(), result[0]):
-         return True
-     return False
+def register_user(username, password):
+    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    try:
+        c.execute(
+            "INSERT INTO users (username, password, xp, level, wins, losses) VALUES (?, ?, 0, 1, 0, 0)",
+            (username, hashed_pw),
+        )
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
 
- def multiplayer_ui():
+
+def authenticate_user(username, password):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute("SELECT password FROM users WHERE username = ?", (username,))
+    result = c.fetchone()
+    conn.close()
+    if result and bcrypt.checkpw(password.encode(), result[0]):
+        return True
+    return False
+
+
+def multiplayer_ui():
     """Display the multiplayer mode UI"""
     # Only allow access if logged in
     if not st.session_state.get("logged_in", False):
@@ -435,7 +473,10 @@ def get_player_profile_pic(username):
 
     # Room creation/joining UI
     if not st.session_state.multiplayer_room_code:
-        st.markdown("<h1 class='game-title'>🏀 LeMultiplayer</h1>", unsafe_allow_html=True)
+        st.markdown(
+            "<h1 class='game-title'>🏀 LeMultiplayer</h1>",
+            unsafe_allow_html=True,
+        )
 
         col1, col2 = st.columns(2)
 
@@ -449,14 +490,20 @@ def get_player_profile_pic(username):
 
         with col2:
             st.markdown("### Join Room")
-            room_code = st.text_input("Enter Room Code", max_chars=6, key="join_room_code").upper()
-            if st.button("Join Room", use_container_width=True, disabled=not room_code):
+            room_code = st.text_input(
+                "Enter Room Code", max_chars=6, key="join_room_code"
+            ).upper()
+            if st.button(
+                "Join Room", use_container_width=True, disabled=not room_code
+            ):
                 if join_room(room_code, st.session_state.username):
                     st.session_state.multiplayer_room_code = room_code
                     st.session_state.multiplayer_role = "join"
                     st.rerun()
                 else:
-                    st.error("Could not join room. It may not exist or is full.")
+                    st.error(
+                        "Could not join room. It may not exist or is full."
+                    )
 
     # Game room UI
     else:
@@ -467,23 +514,33 @@ def get_player_profile_pic(username):
             st.rerun()
 
         # Display game state
-        st.markdown(f"<h1 class='game-title'>🏀 LeMultiplayer - Room {st.session_state.multiplayer_room_code}</h1>", unsafe_allow_html=True)
+        st.markdown(
+            f"<h1 class='game-title'>🏀 LeMultiplayer - Room {st.session_state.multiplayer_room_code}</h1>",
+            unsafe_allow_html=True,
+        )
 
         # Show match progress (best of 3)
         st.markdown(f"**Match Round:** {room['match_round']}/3")
-        st.markdown(f"**Score:** {room['player1']} {room['player1_wins']} - {room['player2_wins']} {room['player2'] if room['player2'] else 'Waiting...'}")
+        st.markdown(
+            f"**Score:** {room['player1']} {room['player1_wins']} - {room['player2_wins']} {room['player2'] if room['player2'] else 'Waiting...'}"
+        )
 
         # Show waiting screen if game hasn't started
-        if room['game_state'] == 'waiting':
+        if room["game_state"] == "waiting":
             st.markdown("### Waiting for opponent to join...")
-            st.markdown(f"Share this room code: **{st.session_state.multiplayer_room_code}**")
+            st.markdown(
+                f"Share this room code: **{st.session_state.multiplayer_room_code}**"
+            )
 
             if st.button("Cancel", use_container_width=True):
                 # Clean up room if host cancels
                 if st.session_state.multiplayer_role == "host":
                     conn = sqlite3.connect("users.db")
                     c = conn.cursor()
-                    c.execute("DELETE FROM multiplayer_rooms WHERE room_code = ?", (st.session_state.multiplayer_room_code,))
+                    c.execute(
+                        "DELETE FROM multiplayer_rooms WHERE room_code = ?",
+                        (st.session_state.multiplayer_room_code,),
+                    )
                     conn.commit()
                     conn.close()
                 st.session_state.multiplayer_room_code = None
@@ -491,7 +548,11 @@ def get_player_profile_pic(username):
             return
 
         # Determine player and opponent
-        player = "player1" if room['player1'] == st.session_state.username else "player2"
+        player = (
+            "player1"
+            if room["player1"] == st.session_state.username
+            else "player2"
+        )
         opponent = "player2" if player == "player1" else "player1"
 
         # Display player cards
@@ -500,58 +561,96 @@ def get_player_profile_pic(username):
         with col1:
             # Player card
             st.markdown(f"### You ({st.session_state.username})")
-            st.image(get_player_profile_pic(st.session_state.username), width=150)
+            st.image(
+                get_player_profile_pic(st.session_state.username), width=150
+            )
 
             # Player stats
             st.markdown(f"**Health:** {room[f'{player}_hp']}/140")
-            st.progress(room[f'{player}_hp'] / 140)
+            st.progress(room[f"{player}_hp"] / 140)
             st.markdown(f"**Stamina:** {room[f'{player}_stamina']}/100")
-            st.progress(room[f'{player}_stamina'] / 100)
+            st.progress(room[f"{player}_stamina"] / 100)
             st.markdown(f"**Special Meter:** {room[f'{player}_special']}/100")
-            st.progress(room[f'{player}_special'] / 100)
+            st.progress(room[f"{player}_special"] / 100)
 
             # Show move selection if it's the player's turn
-            if room['game_state'] == 'playing' and (
-                (player == "player1" and room['current_turn'] == 1) or 
-                (player == "player2" and room['current_turn'] == 2)
+            if room["game_state"] == "playing" and (
+                (player == "player1" and room["current_turn"] == 1)
+                or (player == "player2" and room["current_turn"] == 2)
             ):
                 st.markdown("### Your Move")
 
                 # Check if player has already moved
-                if not room[f'{player}_ready']:
+                if not room[f"{player}_ready"]:
                     col1, col2, col3, col4 = st.columns(4)
 
                     with col1:
-                        attack_disabled = room[f'{player}_stamina'] < 15
-                        if st.button("🏀 Attack", disabled=attack_disabled, use_container_width=True,
-                                    help="Basic attack (Cost: 15 Stamina, +10 Special Meter)"):
-                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "attack")
+                        attack_disabled = room[f"{player}_stamina"] < 15
+                        if st.button(
+                            "🏀 Attack",
+                            disabled=attack_disabled,
+                            use_container_width=True,
+                            help="Basic attack (Cost: 15 Stamina, +10 Special Meter)",
+                        ):
+                            update_player_move(
+                                st.session_state.multiplayer_room_code,
+                                st.session_state.username,
+                                "attack",
+                            )
                             st.rerun()
 
                     with col2:
-                        defend_disabled = room[f'{player}_stamina'] < 10
-                        if st.button("🛡️ Defend", disabled=defend_disabled, use_container_width=True,
-                                    help="Reduce incoming damage by 50% (Cost: 10 Stamina, +15 Special Meter)"):
-                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "defend")
+                        defend_disabled = room[f"{player}_stamina"] < 10
+                        if st.button(
+                            "🛡️ Defend",
+                            disabled=defend_disabled,
+                            use_container_width=True,
+                            help="Reduce incoming damage by 50% (Cost: 10 Stamina, +15 Special Meter)",
+                        ):
+                            update_player_move(
+                                st.session_state.multiplayer_room_code,
+                                st.session_state.username,
+                                "defend",
+                            )
                             st.rerun()
 
                     with col3:
-                        if st.button("💤 Rest", use_container_width=True,
-                                    help="Recover 25-40 Stamina (+5 Special Meter)"):
-                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "rest")
+                        if st.button(
+                            "💤 Rest",
+                            use_container_width=True,
+                            help="Recover 25-40 Stamina (+5 Special Meter)",
+                        ):
+                            update_player_move(
+                                st.session_state.multiplayer_room_code,
+                                st.session_state.username,
+                                "rest",
+                            )
                             st.rerun()
 
                     with col4:
-                        special_disabled = room[f'{player}_special'] < 100 or room[f'{player}_stamina'] < 25
-                        if st.button("⭐ Special", disabled=special_disabled, use_container_width=True,
-                                    help="Powerful attack (Requires: Full Special Meter, Costs: 25 Stamina)"):
-                            update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "special")
+                        special_disabled = (
+                            room[f"{player}_special"] < 100
+                            or room[f"{player}_stamina"] < 25
+                        )
+                        if st.button(
+                            "⭐ Special",
+                            disabled=special_disabled,
+                            use_container_width=True,
+                            help="Powerful attack (Requires: Full Special Meter, Costs: 25 Stamina)",
+                        ):
+                            update_player_move(
+                                st.session_state.multiplayer_room_code,
+                                st.session_state.username,
+                                "special",
+                            )
                             st.rerun()
                 else:
                     st.success("Move submitted! Waiting for opponent...")
 
                 # Show timer
-                last_action = datetime.strptime(room['last_action'], "%Y-%m-%d %H:%M:%S")
+                last_action = datetime.strptime(
+                    room["last_action"], "%Y-%m-%d %H:%M:%S"
+                )
                 time_elapsed = (datetime.now() - last_action).total_seconds()
                 time_left = max(0, 10 - time_elapsed)
 
@@ -560,12 +659,18 @@ def get_player_profile_pic(username):
 
                 if time_left <= 0:
                     # Time's up - auto-submit a rest move
-                    update_player_move(st.session_state.multiplayer_room_code, st.session_state.username, "rest")
+                    update_player_move(
+                        st.session_state.multiplayer_room_code,
+                        st.session_state.username,
+                        "rest",
+                    )
                     st.rerun()
 
         with col2:
             # Opponent card
-            opponent_username = room[opponent] if room[opponent] else "Waiting..."
+            opponent_username = (
+                room[opponent] if room[opponent] else "Waiting..."
+            )
             st.markdown(f"### Opponent ({opponent_username})")
 
             if room[opponent]:
@@ -573,18 +678,20 @@ def get_player_profile_pic(username):
 
                 # Opponent stats (show less info)
                 st.markdown(f"**Health:** {room[f'{opponent}_hp']}/140")
-                st.progress(room[f'{opponent}_hp'] / 140)
+                st.progress(room[f"{opponent}_hp"] / 140)
 
                 # Show special meter (but not stamina)
-                st.markdown(f"**Special Meter:** {'?' if not room[f'{opponent}_ready'] else room[f'{opponent}_special']}/100")
-                if room[f'{opponent}_ready']:
-                    st.progress(room[f'{opponent}_special'] / 100)
+                st.markdown(
+                    f"**Special Meter:** {'?' if not room[f'{opponent}_ready'] else room[f'{opponent}_special']}/100"
+                )
+                if room[f"{opponent}_ready"]:
+                    st.progress(room[f"{opponent}_special"] / 100)
                 else:
                     st.progress(0)
 
                 # Show if opponent has submitted move
-                if room['game_state'] == 'playing':
-                    if room[f'{opponent}_ready']:
+                if room["game_state"] == "playing":
+                    if room[f"{opponent}_ready"]:
                         st.info("Opponent has submitted their move")
                     else:
                         st.info("Waiting for opponent's move...")
@@ -592,21 +699,29 @@ def get_player_profile_pic(username):
                 st.info("Waiting for opponent to join...")
 
         # Process turn if both players have moved
-        if room['game_state'] == 'playing' and room['player1_ready'] and room['player2_ready']:
+        if (
+            room["game_state"] == "playing"
+            and room["player1_ready"]
+            and room["player2_ready"]
+        ):
             process_multiplayer_turn(st.session_state.multiplayer_room_code)
             st.rerun()
 
         # Handle game over state
-        if room['game_state'] in ('finished', 'match_over'):
-            if room['game_state'] == 'match_over':
+        if room["game_state"] in ("finished", "match_over"):
+            if room["game_state"] == "match_over":
                 st.balloons()
-                if room['winner'] == st.session_state.username:
-                    st.success(f"🏆 You won the match {room['player1_wins']}-{room['player2_wins']}!")
+                if room["winner"] == st.session_state.username:
+                    st.success(
+                        f"🏆 You won the match {room['player1_wins']}-{room['player2_wins']}!"
+                    )
                 else:
-                    st.error(f"💀 You lost the match {room['player1_wins']}-{room['player2_wins']}.")
+                    st.error(
+                        f"💀 You lost the match {room['player1_wins']}-{room['player2_wins']}."
+                    )
 
                 # Show XP earned
-                if room['winner'] == st.session_state.username:
+                if room["winner"] == st.session_state.username:
                     st.markdown("**XP Earned:** +150 XP (Match Win)")
                 else:
                     st.markdown("**XP Earned:** +100 XP (Match Loss)")
@@ -614,7 +729,9 @@ def get_player_profile_pic(username):
                 # Show options
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("Return to Main Menu", use_container_width=True):
+                    if st.button(
+                        "Return to Main Menu", use_container_width=True
+                    ):
                         st.session_state.multiplayer_room_code = None
                         st.rerun()
                 with col2:
@@ -639,7 +756,7 @@ def get_player_profile_pic(username):
                                     match_round = 1,
                                     last_action = CURRENT_TIMESTAMP
                                 WHERE room_code = ?""",
-                                (st.session_state.multiplayer_room_code,)
+                                (st.session_state.multiplayer_room_code,),
                             )
                             conn.commit()
                             conn.close()
@@ -648,9 +765,9 @@ def get_player_profile_pic(username):
                             st.info("Waiting for host to restart the match...")
             else:
                 # Single round finished
-                if room['winner'] == st.session_state.username:
+                if room["winner"] == st.session_state.username:
                     st.success(f"🎉 You won round {room['match_round']}!")
-                elif room['winner']:
+                elif room["winner"]:
                     st.error(f"💀 You lost round {room['match_round']}.")
                 else:
                     st.info("🤝 Round ended in a tie!")
@@ -663,427 +780,540 @@ def get_player_profile_pic(username):
         time.sleep(2)
         st.rerun()
 
- def get_user_stats(username):
-     conn = sqlite3.connect("users.db")
-     c = conn.cursor()
-     c.execute("SELECT xp, level, wins, losses FROM users WHERE username = ?", (username,))
-     result = c.fetchone()
-     conn.close()
-     if result:
-         return {
-             "xp": result[0],
-             "level": result[1],
-             "wins": result[2],
-             "losses": result[3]
-         }
-     return {"xp": 0, "level": 1, "wins": 0, "losses": 0}
 
- def update_user_xp_fixed(username, xp_earned, won=False):
-     """Update user XP, wins, and losses with better error handling"""
-     conn = sqlite3.connect("users.db")
-     c = conn.cursor()
+def get_user_stats(username):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute(
+        "SELECT xp, level, wins, losses FROM users WHERE username = ?",
+        (username,),
+    )
+    result = c.fetchone()
+    conn.close()
+    if result:
+        return {
+            "xp": result[0],
+            "level": result[1],
+            "wins": result[2],
+            "losses": result[3],
+        }
+    return {"xp": 0, "level": 1, "wins": 0, "losses": 0}
 
-     # Check if user exists
-     c.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username,))
-     user_exists = c.fetchone()[0] > 0
 
-     if not user_exists:
-         # Create new user
-         c.execute("INSERT INTO users (username, xp, level, wins, losses) VALUES (?, ?, ?, ?, ?)", 
-                  (username, xp_earned, 1, 1 if won else 0, 0 if won else 1))
-         conn.commit()
-         conn.close()
-         return False  # No level up for new user
+def update_user_xp_fixed(username, xp_earned, won=False):
+    """Update user XP, wins, and losses with better error handling"""
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
 
-     # Get current stats
-     c.execute("SELECT xp, level, wins, losses FROM users WHERE username = ?", (username,))
-     result = c.fetchone()
+    # Check if user exists
+    c.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username,))
+    user_exists = c.fetchone()[0] > 0
 
-     if result is None:
-         # This shouldn't happen but handle it just in case
-         c.execute("INSERT INTO users (username, xp, level, wins, losses) VALUES (?, ?, ?, ?, ?)", 
-                  (username, xp_earned, 1, 1 if won else 0, 0 if won else 1))
-         conn.commit()
-         conn.close()
-         return False
+    if not user_exists:
+        # Create new user
+        c.execute(
+            "INSERT INTO users (username, xp, level, wins, losses) VALUES (?, ?, ?, ?, ?)",
+            (username, xp_earned, 1, 1 if won else 0, 0 if won else 1),
+        )
+        conn.commit()
+        conn.close()
+        return False  # No level up for new user
 
-     current_xp, current_level, wins, losses = result
+    # Get current stats
+    c.execute(
+        "SELECT xp, level, wins, losses FROM users WHERE username = ?",
+        (username,),
+    )
+    result = c.fetchone()
 
-     # Update wins or losses
-     if won:
-         wins += 1
-     else:
-         losses += 1
+    if result is None:
+        # This shouldn't happen but handle it just in case
+        c.execute(
+            "INSERT INTO users (username, xp, level, wins, losses) VALUES (?, ?, ?, ?, ?)",
+            (username, xp_earned, 1, 1 if won else 0, 0 if won else 1),
+        )
+        conn.commit()
+        conn.close()
+        return False
 
-     # Add XP
-     new_xp = current_xp + xp_earned
+    current_xp, current_level, wins, losses = result
 
-     # Check if level up
-     new_level = current_level
-     while new_level < 60 and new_xp >= xp_required_for_level(new_level + 1):
-         new_level += 1
+    # Update wins or losses
+    if won:
+        wins += 1
+    else:
+        losses += 1
 
-     # Update database with explicit column names
-     c.execute("""
+    # Add XP
+    new_xp = current_xp + xp_earned
+
+    # Check if level up
+    new_level = current_level
+    while new_level < 60 and new_xp >= xp_required_for_level(new_level + 1):
+        new_level += 1
+
+    # Update database with explicit column names
+    c.execute(
+        """
          UPDATE users 
          SET xp = ?, level = ?, wins = ?, losses = ? 
          WHERE username = ?
-     """, (new_xp, new_level, wins, losses, username))
+     """,
+        (new_xp, new_level, wins, losses, username),
+    )
 
-     conn.commit()
-     conn.close()
+    conn.commit()
+    conn.close()
 
-     return new_level > current_level
+    return new_level > current_level
 
- # Set page configuration
- st.set_page_config(
-     page_title="LeBron Boss Battle",
-     layout="wide",
-     initial_sidebar_state="collapsed"
- )
 
- # --------------------- Game Classes and Functions --------------------- #
+# Set page configuration
+st.set_page_config(
+    page_title="LeBron Boss Battle",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
- class Player:
-     def __init__(self, name, health, stamina, special_meter=0):
-         self.name = name
-         self.max_health = health
-         self.health = health
-         self.max_stamina = 100
-         self.stamina = stamina
-         self.special_meter = special_meter
-         self.is_defending = False
-         self.buffs = []
-         self.debuffs = []
+# --------------------- Game Classes and Functions --------------------- #
 
-     def attack(self):
-         if self.stamina < 15:
-             return (0, f"{self.name} is too tired to attack!")
-         self.stamina -= 15
-         self.special_meter += 10
-         if self.special_meter > 100:
-             self.special_meter = 100
-         base_damage = random.randint(15, 30)
-         critical = random.random() < 0.2
-         if critical:
-             base_damage = int(base_damage * 1.5)
-             return (base_damage, f"{self.name} lands a CRITICAL hit for {base_damage} damage!")
-         return (base_damage, f"{self.name} attacks for {base_damage} damage!")
 
-     def special_attack(self):
-         if self.special_meter < 100:
-             return (0, f"{self.name} doesn't have enough energy for a special attack!")
-         self.special_meter = 0
-         self.stamina -= 25
-         if self.stamina < 0:
-             self.stamina = 0
-         damage = random.randint(40, 60)
-         return (damage, f"{self.name} unleashes a SPECIAL ATTACK for {damage} massive damage!")
+class Player:
+    def __init__(self, name, health, stamina, special_meter=0):
+        self.name = name
+        self.max_health = health
+        self.health = health
+        self.max_stamina = 100
+        self.stamina = stamina
+        self.special_meter = special_meter
+        self.is_defending = False
+        self.buffs = []
+        self.debuffs = []
 
-     def defend(self):
-         self.stamina -= 10
-         if self.stamina < 0:
-             self.stamina = 0
-         self.is_defending = True  # Set defending state
-         self.special_meter += 15
-         if self.special_meter > 100:
-             self.special_meter = 100
-         return f"{self.name} takes a defensive stance, ready to reduce and heal from incoming damage!"
+    def attack(self):
+        if self.stamina < 15:
+            return (0, f"{self.name} is too tired to attack!")
+        self.stamina -= 15
+        self.special_meter += 10
+        if self.special_meter > 100:
+            self.special_meter = 100
+        base_damage = random.randint(15, 30)
+        critical = random.random() < 0.2
+        if critical:
+            base_damage = int(base_damage * 1.5)
+            return (
+                base_damage,
+                f"{self.name} lands a CRITICAL hit for {base_damage} damage!",
+            )
+        return (base_damage, f"{self.name} attacks for {base_damage} damage!")
 
-     def rest(self):
-         gained = random.randint(25, 40)
-         self.stamina += gained
-         if self.stamina > self.max_stamina:
-             self.stamina = self.max_stamina
-         self.special_meter += 5
-         if self.special_meter > 100:
-             self.special_meter = 100
-         return f"{self.name} rests and recovers {gained} stamina."
+    def special_attack(self):
+        if self.special_meter < 100:
+            return (
+                0,
+                f"{self.name} doesn't have enough energy for a special attack!",
+            )
+        self.special_meter = 0
+        self.stamina -= 25
+        if self.stamina < 0:
+            self.stamina = 0
+        damage = random.randint(40, 60)
+        return (
+            damage,
+            f"{self.name} unleashes a SPECIAL ATTACK for {damage} massive damage!",
+        )
 
-     def take_damage(self, damage):
-         if self.is_defending:
-             damage = int(damage * 0.5)
-             result = f"{self.name} blocks and reduces damage to {damage}!"
-             self.is_defending = False
-         else:
-             result = f"{self.name} takes {damage} damage!"
-         self.health -= damage
-         if self.health < 0:
-             self.health = 0
-         return result
+    def defend(self):
+        self.stamina -= 10
+        if self.stamina < 0:
+            self.stamina = 0
+        self.is_defending = True  # Set defending state
+        self.special_meter += 15
+        if self.special_meter > 100:
+            self.special_meter = 100
+        return f"{self.name} takes a defensive stance, ready to reduce and heal from incoming damage!"
 
-     def is_alive(self):
-         return self.health > 0
+    def rest(self):
+        gained = random.randint(25, 40)
+        self.stamina += gained
+        if self.stamina > self.max_stamina:
+            self.stamina = self.max_stamina
+        self.special_meter += 5
+        if self.special_meter > 100:
+            self.special_meter = 100
+        return f"{self.name} rests and recovers {gained} stamina."
 
-     def reset_turn(self):
-         self.is_defending = False
+    def take_damage(self, damage):
+        if self.is_defending:
+            damage = int(damage * 0.5)
+            result = f"{self.name} blocks and reduces damage to {damage}!"
+            self.is_defending = False
+        else:
+            result = f"{self.name} takes {damage} damage!"
+        self.health -= damage
+        if self.health < 0:
+            self.health = 0
+        return result
 
- class LeBron(Player):
-     def __init__(self, difficulty):
-         health = 100 if difficulty == "Easy" else 160 if difficulty == "Medium" else 180
-         stamina = 100
-         super().__init__("LeBron James", health, stamina)
-         self.difficulty = difficulty
-         self.special_move_name = "Signature Slam Dunk"
-         self.abilities = {
-             "POSTERIZER": "Quick attack that has a chance to lower opponent's stamina",
-             "BLOCKED BY JAMES": "Strong defensive move that also recovers stamina",
-             "ALLEY-OOP TO DAVIS": "Tactical move that increases special meter gain",
-             f"{self.special_move_name}": "Devastating special attack that deals massive damage"
-         }
-         self.move_patterns = self.set_move_patterns()
-         self.consecutive_attacks = 0
-         self.consecutive_defends = 0
-         self.player_last_hp = 140  # Store opponent's last HP to track damage dealt
-         self.player_pattern_memory = []  # Remember opponent's last 3 moves
-         self.turn_count = 0
+    def is_alive(self):
+        return self.health > 0
 
-     def set_move_patterns(self):
-         """Define LeBron's move patterns based on difficulty."""
-         if self.difficulty == "Easy":
-             return {"attack": 0.4, "defend": 0.3, "rest": 0.25, "special": 0.05}
-         elif self.difficulty == "Medium":
-             return {"attack": 0.45, "defend": 0.25, "rest": 0.2, "special": 0.1}
-         else:  # Hard difficulty
-             return {"attack": 0.5, "defend": 0.2, "rest": 0.15, "special": 0.15}
+    def reset_turn(self):
+        self.is_defending = False
 
-     def analyze_player_pattern(self, player):
-         """Analyze player's pattern and adjust strategy accordingly (for Medium and Hard only)"""
-         if self.difficulty == "Easy":
-             return  # Skip analysis for Easy mode
 
-         # Track player health changes to detect attacks
-         damage_taken = self.player_last_hp - player.health
-         self.player_last_hp = player.health
+class LeBron(Player):
+    def __init__(self, difficulty):
+        health = (
+            100
+            if difficulty == "Easy"
+            else 160 if difficulty == "Medium" else 180
+        )
+        stamina = 100
+        super().__init__("LeBron James", health, stamina)
+        self.difficulty = difficulty
+        self.special_move_name = "Signature Slam Dunk"
+        self.abilities = {
+            "POSTERIZER": "Quick attack that has a chance to lower opponent's stamina",
+            "BLOCKED BY JAMES": "Strong defensive move that also recovers stamina",
+            "ALLEY-OOP TO DAVIS": "Tactical move that increases special meter gain",
+            f"{self.special_move_name}": "Devastating special attack that deals massive damage",
+        }
+        self.move_patterns = self.set_move_patterns()
+        self.consecutive_attacks = 0
+        self.consecutive_defends = 0
+        self.player_last_hp = (
+            140  # Store opponent's last HP to track damage dealt
+        )
+        self.player_pattern_memory = []  # Remember opponent's last 3 moves
+        self.turn_count = 0
 
-         # Record player's apparent move
-         player_move = None
-         if damage_taken > 0:
-             if damage_taken > 35:  # Likely a special attack
-                 player_move = "special"
-             else:
-                 player_move = "attack"
-         elif player.stamina > self.player_last_stamina:
-             player_move = "rest"
-         elif player.is_defending:
-             player_move = "defend"
+    def set_move_patterns(self):
+        """Define LeBron's move patterns based on difficulty."""
+        if self.difficulty == "Easy":
+            return {
+                "attack": 0.4,
+                "defend": 0.3,
+                "rest": 0.25,
+                "special": 0.05,
+            }
+        elif self.difficulty == "Medium":
+            return {
+                "attack": 0.45,
+                "defend": 0.25,
+                "rest": 0.2,
+                "special": 0.1,
+            }
+        else:  # Hard difficulty
+            return {
+                "attack": 0.5,
+                "defend": 0.2,
+                "rest": 0.15,
+                "special": 0.15,
+            }
 
-         self.player_last_stamina = player.stamina
+    def analyze_player_pattern(self, player):
+        """Analyze player's pattern and adjust strategy accordingly (for Medium and Hard only)"""
+        if self.difficulty == "Easy":
+            return  # Skip analysis for Easy mode
 
-         # Add to pattern memory (keep last 3 moves)
-         if player_move:
-             self.player_pattern_memory.append(player_move)
-             if len(self.player_pattern_memory) > 3:
-                 self.player_pattern_memory.pop(0)
+        # Track player health changes to detect attacks
+        damage_taken = self.player_last_hp - player.health
+        self.player_last_hp = player.health
 
-     def predict_player_action(self):
-         """Try to predict player's next action based on pattern"""
-         if len(self.player_pattern_memory) < 2 or self.difficulty == "Easy":
-             return None
+        # Record player's apparent move
+        player_move = None
+        if damage_taken > 0:
+            if damage_taken > 35:  # Likely a special attack
+                player_move = "special"
+            else:
+                player_move = "attack"
+        elif player.stamina > self.player_last_stamina:
+            player_move = "rest"
+        elif player.is_defending:
+            player_move = "defend"
 
-         # Look for patterns like "attack, attack, special" or "rest, attack"
-         if self.difficulty == "Hard":
-             # Check for "rest then attack" pattern
-             if self.player_pattern_memory[-1] == "rest":
-                 return "attack"  # Player might attack after resting
+        self.player_last_stamina = player.stamina
 
-             # Check for "multiple attacks" pattern
-             attack_count = self.player_pattern_memory.count("attack")
-             if attack_count >= 2:
-                 return "special"  # Player might be building special meter
+        # Add to pattern memory (keep last 3 moves)
+        if player_move:
+            self.player_pattern_memory.append(player_move)
+            if len(self.player_pattern_memory) > 3:
+                self.player_pattern_memory.pop(0)
 
-             # Check for special meter buildup
-             if "special" in self.player_pattern_memory:
-                 return "rest"  # Player used special, likely needs to rest
+    def predict_player_action(self):
+        """Try to predict player's next action based on pattern"""
+        if len(self.player_pattern_memory) < 2 or self.difficulty == "Easy":
+            return None
 
-         return None
+        # Look for patterns like "attack, attack, special" or "rest, attack"
+        if self.difficulty == "Hard":
+            # Check for "rest then attack" pattern
+            if self.player_pattern_memory[-1] == "rest":
+                return "attack"  # Player might attack after resting
 
-     def choose_action(self, player=None):
-         """Choose LeBron's action based on strategy, difficulty and game state."""
-         self.turn_count += 1
+            # Check for "multiple attacks" pattern
+            attack_count = self.player_pattern_memory.count("attack")
+            if attack_count >= 2:
+                return "special"  # Player might be building special meter
 
-         # Update pattern analysis if we have player information
-         if player:
-             self.analyze_player_pattern(player)
+            # Check for special meter buildup
+            if "special" in self.player_pattern_memory:
+                return "rest"  # Player used special, likely needs to rest
 
-         # Initialize base weights from move patterns
-         weights = {
-             "attack": self.move_patterns["attack"],
-             "defend": self.move_patterns["defend"],
-             "rest": self.move_patterns["rest"],
-             "special": 0 if self.special_meter < 100 else self.move_patterns["special"]
-         }
+        return None
 
-         # EMERGENCY RESPONSES (highest priority)
-         # Only rest if stamina is below threshold (25-30)
-         if self.stamina <= 30:
-             # The lower the stamina, the higher the chance to rest
-             rest_urgency = (30 - self.stamina) / 30  # 0.0 to 1.0 scale
-             weights["rest"] *= (1 + 2 * rest_urgency)  # Up to 3x more likely to rest when critically low
+    def choose_action(self, player=None):
+        """Choose LeBron's action based on strategy, difficulty and game state."""
+        self.turn_count += 1
 
-             # Force rest if extremely low stamina (below 15)
-             if self.stamina < 15:
-                 return "rest"
-         else:
-             # Significantly reduce chance of resting when stamina is high
-             weights["rest"] *= 0.2  # 80% reduction in rest probability when above threshold
+        # Update pattern analysis if we have player information
+        if player:
+            self.analyze_player_pattern(player)
 
-         # TACTICAL DECISIONS (based on difficulty)
-         if self.difficulty == "Hard" or self.difficulty == "Medium":
-             # If health is very low, increase chance of defensive move
-             if self.health < self.max_health * 0.3:
-                 weights["defend"] *= 2.0
+        # Initialize base weights from move patterns
+        weights = {
+            "attack": self.move_patterns["attack"],
+            "defend": self.move_patterns["defend"],
+            "rest": self.move_patterns["rest"],
+            "special": (
+                0
+                if self.special_meter < 100
+                else self.move_patterns["special"]
+            ),
+        }
 
-             # If player has high special meter and we predict special attack
-             predicted_move = self.predict_player_action()
-             if predicted_move == "special" and player and player.special_meter >= 75:
-                 weights["defend"] *= 3.0  # Very likely to defend
+        # EMERGENCY RESPONSES (highest priority)
+        # Only rest if stamina is below threshold (25-30)
+        if self.stamina <= 30:
+            # The lower the stamina, the higher the chance to rest
+            rest_urgency = (30 - self.stamina) / 30  # 0.0 to 1.0 scale
+            weights["rest"] *= (
+                1 + 2 * rest_urgency
+            )  # Up to 3x more likely to rest when critically low
 
-             # If we have special meter full and player is low on health, use special
-             if self.special_meter >= 100 and player and player.health < player.max_health * 0.4:
-                 return "special"  # Go for the kill
+            # Force rest if extremely low stamina (below 15)
+            if self.stamina < 15:
+                return "rest"
+        else:
+            # Significantly reduce chance of resting when stamina is high
+            weights[
+                "rest"
+            ] *= 0.2  # 80% reduction in rest probability when above threshold
 
-             # Avoid predictable patterns
-             if self.consecutive_attacks >= 2:
-                 weights["attack"] *= 0.5  # Reduce chance of third consecutive attack
+        # TACTICAL DECISIONS (based on difficulty)
+        if self.difficulty == "Hard" or self.difficulty == "Medium":
+            # If health is very low, increase chance of defensive move
+            if self.health < self.max_health * 0.3:
+                weights["defend"] *= 2.0
 
-             if self.consecutive_defends >= 2:
-                 weights["defend"] *= 0.3  # Reduce chance of third consecutive defense
+            # If player has high special meter and we predict special attack
+            predicted_move = self.predict_player_action()
+            if (
+                predicted_move == "special"
+                and player
+                and player.special_meter >= 75
+            ):
+                weights["defend"] *= 3.0  # Very likely to defend
 
-             # Enhanced special attack strategy
-             if self.special_meter >= 100:
-                 special_threshold = 0.8 if self.difficulty == "Hard" else 0.6
-                 if random.random() < special_threshold:
-                     return "special"
+            # If we have special meter full and player is low on health, use special
+            if (
+                self.special_meter >= 100
+                and player
+                and player.health < player.max_health * 0.4
+            ):
+                return "special"  # Go for the kill
 
-             # If player is defending, consider resting instead of attacking
-             if player and player.is_defending:
-                 weights["attack"] *= 0.4
-                 weights["rest"] *= 1.5
+            # Avoid predictable patterns
+            if self.consecutive_attacks >= 2:
+                weights[
+                    "attack"
+                ] *= 0.5  # Reduce chance of third consecutive attack
 
-         # Hard mode specific enhancements
-         if self.difficulty == "Hard":
-             # Hard mode should be more conservative with stamina, but not rest unnecessarily
-             if 15 < self.stamina < 40:
-                 weights["rest"] *= 1.5
+            if self.consecutive_defends >= 2:
+                weights[
+                    "defend"
+                ] *= 0.3  # Reduce chance of third consecutive defense
 
-             # More aggressive when player is low on health
-             if player and player.health < player.max_health * 0.3:
-                 weights["attack"] *= 1.5
+            # Enhanced special attack strategy
+            if self.special_meter >= 100:
+                special_threshold = 0.8 if self.difficulty == "Hard" else 0.6
+                if random.random() < special_threshold:
+                    return "special"
 
-             # Use stamina efficiently at the beginning of the battle
-             if self.turn_count < 5 and self.health > self.max_health * 0.8:
-                 weights["defend"] *= 1.3  # Defend early to build special meter
+            # If player is defending, consider resting instead of attacking
+            if player and player.is_defending:
+                weights["attack"] *= 0.4
+                weights["rest"] *= 1.5
 
-         # Prefer attacking over resting when stamina is decent
-         if self.stamina > 50:
-             weights["attack"] *= 1.3
+        # Hard mode specific enhancements
+        if self.difficulty == "Hard":
+            # Hard mode should be more conservative with stamina, but not rest unnecessarily
+            if 15 < self.stamina < 40:
+                weights["rest"] *= 1.5
 
-         # Calculate the final decision
-         actions = list(weights.keys())
-         weights_list = list(weights.values())
+            # More aggressive when player is low on health
+            if player and player.health < player.max_health * 0.3:
+                weights["attack"] *= 1.5
 
-         chosen_action = random.choices(actions, weights=weights_list)[0]
+            # Use stamina efficiently at the beginning of the battle
+            if self.turn_count < 5 and self.health > self.max_health * 0.8:
+                weights["defend"] *= 1.3  # Defend early to build special meter
 
-         # Double-check resting logic - only rest if truly needed (below 30 stamina)
-         if chosen_action == "rest" and self.stamina > 30:
-             # Reconsider with reduced rest weight
-             weights["rest"] = 0.1  # Very low chance
-             actions = list(weights.keys())
-             weights_list = list(weights.values())
-             chosen_action = random.choices(actions, weights=weights_list)[0]
+        # Prefer attacking over resting when stamina is decent
+        if self.stamina > 50:
+            weights["attack"] *= 1.3
 
-         # Update consecutive action counters
-         if chosen_action == "attack":
-             self.consecutive_attacks += 1
-             self.consecutive_defends = 0
-         elif chosen_action == "defend":
-             self.consecutive_defends += 1
-             self.consecutive_attacks = 0
-         else:
-             self.consecutive_attacks = 0
-             self.consecutive_defends = 0
+        # Calculate the final decision
+        actions = list(weights.keys())
+        weights_list = list(weights.values())
 
-         return chosen_action
+        chosen_action = random.choices(actions, weights=weights_list)[0]
 
-     def attack(self):
-         """Perform an attack with a chance to lower opponent's stamina."""
-         damage, msg = super().attack()
-         # Higher chance of bonus effect on harder difficulties
-         poster_chance = 0.2 if self.difficulty == "Easy" else 0.35 if self.difficulty == "Medium" else 0.5
-         if random.random() < poster_chance:
-             return (damage, "LeBron POSTERS YOU for " + str(damage) + " damage and reduces your stamina!")
-         return (damage, msg)
+        # Double-check resting logic - only rest if truly needed (below 30 stamina)
+        if chosen_action == "rest" and self.stamina > 30:
+            # Reconsider with reduced rest weight
+            weights["rest"] = 0.1  # Very low chance
+            actions = list(weights.keys())
+            weights_list = list(weights.values())
+            chosen_action = random.choices(actions, weights=weights_list)[0]
 
-     def special_attack(self):
-         """Perform a devastating special attack."""
-         damage, _ = super().special_attack()
-         # Scaling damage based on difficulty
-         if self.difficulty == "Medium":
-             damage = int(damage * 1.1)  # 10% damage boost
-         elif self.difficulty == "Hard":
-             damage = int(damage * 1.2)  # 20% damage boost
-         return (damage, f"LeBron unleashes his {self.special_move_name} for {damage} MASSIVE damage!")
+        # Update consecutive action counters
+        if chosen_action == "attack":
+            self.consecutive_attacks += 1
+            self.consecutive_defends = 0
+        elif chosen_action == "defend":
+            self.consecutive_defends += 1
+            self.consecutive_attacks = 0
+        else:
+            self.consecutive_attacks = 0
+            self.consecutive_defends = 0
 
-     def take_damage(self, damage):
-         if self.is_defending:
-             # Damage reduction scales with difficulty
-             reduction = 0.5
-             reduced_damage = int(damage * (1 - reduction))
+        return chosen_action
 
-             # Healing scales with difficulty
-             heal_percent = 0.5
-             heal_amount = int(reduced_damage * heal_percent)
+    def attack(self):
+        """Perform an attack with a chance to lower opponent's stamina."""
+        damage, msg = super().attack()
+        # Higher chance of bonus effect on harder difficulties
+        poster_chance = (
+            0.2
+            if self.difficulty == "Easy"
+            else 0.35 if self.difficulty == "Medium" else 0.5
+        )
+        if random.random() < poster_chance:
+            return (
+                damage,
+                "LeBron POSTERS YOU for "
+                + str(damage)
+                + " damage and reduces your stamina!",
+            )
+        return (damage, msg)
 
-             self.health += heal_amount
-             # Ensure health doesn't exceed max health
-             if self.health > self.max_health:
-                 self.health = self.max_health
-             # Apply the reduced damage
-             self.health -= reduced_damage
-             if self.health < 0:
-                 self.health = 0
-             # Reset defending state AFTER processing damage
-             self.is_defending = False
-             return f"{self.name} blocks and reduces damage to {reduced_damage}, then heals {heal_amount} health!"
-         else:
-             # Apply full damage if not defending
-             self.health -= damage
-             if self.health < 0:
-                 self.health = 0
-             return f"{self.name} takes {damage} damage!"
+    def special_attack(self):
+        """Perform a devastating special attack."""
+        damage, _ = super().special_attack()
+        # Scaling damage based on difficulty
+        if self.difficulty == "Medium":
+            damage = int(damage * 1.1)  # 10% damage boost
+        elif self.difficulty == "Hard":
+            damage = int(damage * 1.2)  # 20% damage boost
+        return (
+            damage,
+            f"LeBron unleashes his {self.special_move_name} for {damage} MASSIVE damage!",
+        )
+
+    def take_damage(self, damage):
+        if self.is_defending:
+            # Damage reduction scales with difficulty
+            reduction = 0.5
+            reduced_damage = int(damage * (1 - reduction))
+
+            # Healing scales with difficulty
+            heal_percent = 0.5
+            heal_amount = int(reduced_damage * heal_percent)
+
+            self.health += heal_amount
+            # Ensure health doesn't exceed max health
+            if self.health > self.max_health:
+                self.health = self.max_health
+            # Apply the reduced damage
+            self.health -= reduced_damage
+            if self.health < 0:
+                self.health = 0
+            # Reset defending state AFTER processing damage
+            self.is_defending = False
+            return f"{self.name} blocks and reduces damage to {reduced_damage}, then heals {heal_amount} health!"
+        else:
+            # Apply full damage if not defending
+            self.health -= damage
+            if self.health < 0:
+                self.health = 0
+            return f"{self.name} takes {damage} damage!"
+
 
 def display_character_card(character, is_player=True):
     card_class = "player-card" if is_player else "lebron-card"
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.markdown("<div class='custom-avatar-container'>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='custom-avatar-container'>", unsafe_allow_html=True
+        )
         if is_player:
-            st.image("https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/04/62/e6/0462e6b9-45b0-f229-afc0-d2f79cce2cf4/artwork.jpg/632x632bb.webp", caption=character.name, width=150)
+            st.image(
+                "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/04/62/e6/0462e6b9-45b0-f229-afc0-d2f79cce2cf4/artwork.jpg/632x632bb.webp",
+                caption=character.name,
+                width=150,
+            )
         else:
-            st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/LeBron_James_%2851960276445%29_%28cropped%29.jpg/1024px-LeBron_James_%2851960276445%29_%28cropped%29.jpg", caption=character.name, width=150)
+            st.image(
+                "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/LeBron_James_%2851960276445%29_%28cropped%29.jpg/1024px-LeBron_James_%2851960276445%29_%28cropped%29.jpg",
+                caption=character.name,
+                width=150,
+            )
         st.markdown("</div>", unsafe_allow_html=True)
     with col2:
-        st.markdown(f"<div class='stat-label'>Health: {character.health}/{character.max_health}</div>", unsafe_allow_html=True)
-        health_percentage = character.health / character.max_health if character.max_health > 0 else 0
+        st.markdown(
+            f"<div class='stat-label'>Health: {character.health}/{character.max_health}</div>",
+            unsafe_allow_html=True,
+        )
+        health_percentage = (
+            character.health / character.max_health
+            if character.max_health > 0
+            else 0
+        )
         st.progress(health_percentage)
-        st.markdown(f"<div class='stat-label'>Stamina: {character.stamina}/{character.max_stamina}</div>", unsafe_allow_html=True)
-        stamina_percentage = character.stamina / character.max_stamina if character.max_stamina > 0 else 0
+        st.markdown(
+            f"<div class='stat-label'>Stamina: {character.stamina}/{character.max_stamina}</div>",
+            unsafe_allow_html=True,
+        )
+        stamina_percentage = (
+            character.stamina / character.max_stamina
+            if character.max_stamina > 0
+            else 0
+        )
         st.progress(stamina_percentage)
-        st.markdown(f"<div class='stat-label'>Special Meter: {character.special_meter}/100</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='stat-label'>Special Meter: {character.special_meter}/100</div>",
+            unsafe_allow_html=True,
+        )
         special_percentage = character.special_meter / 100
         st.progress(special_percentage)
         if character.is_defending:
             st.markdown("🛡️ **Defending**")
+
 
 def initialize_session_state():
     if "game_started" not in st.session_state:
         st.session_state.game_started = False
     if "difficulty" not in st.session_state:
         st.session_state.difficulty = "Medium"
-    if "player" not in st.session_state or st.session_state.get("restart_game", False):
+    if "player" not in st.session_state or st.session_state.get(
+        "restart_game", False
+    ):
         st.session_state.player = Player("You", 140, 100)
-    if "lebron" not in st.session_state or st.session_state.get("restart_game", False):
+    if "lebron" not in st.session_state or st.session_state.get(
+        "restart_game", False
+    ):
         st.session_state.lebron = LeBron(st.session_state.difficulty)
     if st.session_state.get("restart_game", False):
         st.session_state.restart_game = False
@@ -1102,23 +1332,34 @@ def initialize_session_state():
     if "tutorial_shown" not in st.session_state:
         st.session_state.tutorial_shown = False
 
+
 def add_log_entry(message, entry_type="system"):
     timestamp = time.strftime("%H:%M:%S")
-    st.session_state.log.append({
-        "message": message,
-        "type": entry_type,
-        "timestamp": timestamp
-    })
+    st.session_state.log.append(
+        {"message": message, "type": entry_type, "timestamp": timestamp}
+    )
+
 
 def display_battle_log():
     st.markdown("### 📜 Battle Log")
     with st.container():
         for entry in reversed(st.session_state.log):
-            if isinstance(entry, dict) and 'type' in entry and 'message' in entry:
+            if (
+                isinstance(entry, dict)
+                and "type" in entry
+                and "message" in entry
+            ):
                 entry_class = f"log-entry {entry['type']}-log"
-                st.markdown(f"<div class='{entry_class}'><small>{entry['timestamp']}</small> {entry['message']}</div>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='{entry_class}'><small>{entry['timestamp']}</small> {entry['message']}</div>",
+                    unsafe_allow_html=True,
+                )
             else:
-                st.markdown(f"<div class='log-entry system-log'><small>Unknown time</small> {entry}</div>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='log-entry system-log'><small>Unknown time</small> {entry}</div>",
+                    unsafe_allow_html=True,
+                )
+
 
 def lebron_turn():
     lebron = st.session_state.lebron
@@ -1152,6 +1393,7 @@ def lebron_turn():
         add_log_entry(f"Round {st.session_state.round} begins!", "system")
     return True
 
+
 def process_round():
     """Process both player and LeBron actions simultaneously in one round"""
     player = st.session_state.player
@@ -1163,7 +1405,7 @@ def process_round():
     player_damage = 0
 
     # Initialize lebron's player_last_stamina attribute if it doesn't exist
-    if not hasattr(lebron, 'player_last_stamina'):
+    if not hasattr(lebron, "player_last_stamina"):
         lebron.player_last_stamina = player.stamina
 
     # Get LeBron's chosen action - pass player object for smarter decisions
@@ -1171,7 +1413,10 @@ def process_round():
     lebron_damage = 0
 
     # Record intentions in log
-    add_log_entry(f"Round {st.session_state.round} begins - both fighters prepare their moves!", "system")
+    add_log_entry(
+        f"Round {st.session_state.round} begins - both fighters prepare their moves!",
+        "system",
+    )
 
     # First, process defensive moves for both
     if player_action == "defend":
@@ -1225,6 +1470,7 @@ def process_round():
 
     return True
 
+
 def xp_required_for_level(level):
     """
     Calculate XP required for a given level with tiered progression:
@@ -1253,13 +1499,16 @@ def xp_required_for_level(level):
         return base_xp + (level - 40) * 500
     else:
         # Keep the original exponential progression for levels 50-60
-        base_xp = 900 + 10 * 200 + 10 * 300 + 10 * 400 + 9 * 500  # XP for level 49
+        base_xp = (
+            900 + 10 * 200 + 10 * 300 + 10 * 400 + 9 * 500
+        )  # XP for level 49
         if level == 50:
             return base_xp + 500  # Level 50 continues the 500 XP pattern
         else:
             # Exponential progression for levels 51-60
             multiplier = 1.5 ** (level - 50)
             return int(base_xp + 500 + (level - 50) * 200 * multiplier)
+
 
 def calculate_xp_reward(player_health, lebron_health, difficulty, won):
     """
@@ -1284,13 +1533,16 @@ def calculate_xp_reward(player_health, lebron_health, difficulty, won):
     # Health margin bonus (only for wins)
     margin_bonus = 0
     if won:
-        margin_bonus = int((player_health / 140) * 30)  # Up to 30 extra XP based on remaining health
+        margin_bonus = int(
+            (player_health / 140) * 30
+        )  # Up to 30 extra XP based on remaining health
 
     # Calculate total XP
     total_xp = int((base_xp + victory_bonus + margin_bonus) * diff_multiplier)
 
     # Ensure minimum XP for participation
     return max(10, total_xp)
+
 
 def get_level_progress(current_xp, current_level):
     """Calculate progress percentage to next level"""
@@ -1300,8 +1552,13 @@ def get_level_progress(current_xp, current_level):
     xp_for_this_level = next_level_xp - current_level_xp
     xp_gained_in_level = current_xp - current_level_xp
 
-    progress = xp_gained_in_level / xp_for_this_level if xp_for_this_level > 0 else 1.0
+    progress = (
+        xp_gained_in_level / xp_for_this_level
+        if xp_for_this_level > 0
+        else 1.0
+    )
     return min(1.0, max(0.0, progress))  # Ensure between 0 and 1
+
 
 def get_lebron_image_url(level):
     """Get the LeBron image URL for a specific level"""
@@ -1380,11 +1637,15 @@ def get_lebron_image_url(level):
 
     return lebron_images[image_index]
 
+
 # In the end_battle_with_xp function, add a flag to check if XP was already awarded
 def end_battle_with_xp(player, lebron, won):
     """Update XP, wins, and losses after battle completion"""
     # Check if XP was already awarded for this battle
-    if hasattr(st.session_state, 'xp_already_awarded') and st.session_state.xp_already_awarded:
+    if (
+        hasattr(st.session_state, "xp_already_awarded")
+        and st.session_state.xp_already_awarded
+    ):
         # Just return the current stats without updating
         return get_user_stats(st.session_state.username)
 
@@ -1392,7 +1653,9 @@ def end_battle_with_xp(player, lebron, won):
     username = st.session_state.username
 
     # Calculate XP reward
-    xp_earned = calculate_xp_reward(player.health, lebron.health, difficulty, won)
+    xp_earned = calculate_xp_reward(
+        player.health, lebron.health, difficulty, won
+    )
 
     # Make sure we have current user stats before updating
     current_stats = get_user_stats(username)
@@ -1410,7 +1673,7 @@ def end_battle_with_xp(player, lebron, won):
         "new_level": updated_stats["level"],
         "total_xp": updated_stats["xp"],
         "wins": updated_stats["wins"],
-        "losses": updated_stats["losses"]
+        "losses": updated_stats["losses"],
     }
 
     # Mark that XP has been awarded for this battle
@@ -1418,10 +1681,12 @@ def end_battle_with_xp(player, lebron, won):
 
     return updated_stats
 
+
 def add_lepass_css():
     """Add LePASS-specific CSS styles"""
 
-    st.markdown("""
+    st.markdown(
+        """
     <style>
         /* LePASS Progress Bar */
         .lepass-progress-container {
@@ -1529,10 +1794,16 @@ def add_lepass_css():
             border-left: 4px solid #FFA500; /* Orange */
         }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
+
 
 def display_game():
-    st.markdown("<h1 class='game-title'>🏀 LeBron Boss Battle</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 class='game-title'>🏀 LeBron Boss Battle</h1>",
+        unsafe_allow_html=True,
+    )
     player = st.session_state.player
     lebron = st.session_state.lebron
     st.markdown(f"### Round {st.session_state.round}")
@@ -1548,59 +1819,102 @@ def display_game():
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             attack_disabled = player.stamina < 15
-            if st.button("🏀 Attack", disabled=attack_disabled, use_container_width=True,
-                         help="Basic attack (Cost: 15 Stamina, +10 Special Meter)"):
+            if st.button(
+                "🏀 Attack",
+                disabled=attack_disabled,
+                use_container_width=True,
+                help="Basic attack (Cost: 15 Stamina, +10 Special Meter)",
+            ):
                 st.session_state.current_player_action = "attack"
                 process_round()
                 st.rerun()
-            st.markdown("<div class='move-info'>Costs 15 stamina<br>+10 special meter</div>", unsafe_allow_html=True)
+            st.markdown(
+                "<div class='move-info'>Costs 15 stamina<br>+10 special meter</div>",
+                unsafe_allow_html=True,
+            )
         with col2:
             defend_disabled = player.stamina < 10
-            if st.button("🛡️ Defend", disabled=defend_disabled, use_container_width=True,
-                         help="Reduce incoming damage by 50% (Cost: 10 Stamina, +15 Special Meter)"):
+            if st.button(
+                "🛡️ Defend",
+                disabled=defend_disabled,
+                use_container_width=True,
+                help="Reduce incoming damage by 50% (Cost: 10 Stamina, +15 Special Meter)",
+            ):
                 st.session_state.current_player_action = "defend"
                 process_round()
                 st.rerun()
-            st.markdown("<div class='move-info'>Costs 10 stamina<br>+15 special meter<br>Reduces damage by 50%</div>", unsafe_allow_html=True)
+            st.markdown(
+                "<div class='move-info'>Costs 10 stamina<br>+15 special meter<br>Reduces damage by 50%</div>",
+                unsafe_allow_html=True,
+            )
         with col3:
-            if st.button("💤 Rest", use_container_width=True,
-                         help="Recover 25-40 Stamina (+5 Special Meter)"):
+            if st.button(
+                "💤 Rest",
+                use_container_width=True,
+                help="Recover 25-40 Stamina (+5 Special Meter)",
+            ):
                 st.session_state.current_player_action = "rest"
                 process_round()
                 st.rerun()
-            st.markdown("<div class='move-info'>Recover 25-40 stamina<br>+5 special meter</div>", unsafe_allow_html=True)
+            st.markdown(
+                "<div class='move-info'>Recover 25-40 stamina<br>+5 special meter</div>",
+                unsafe_allow_html=True,
+            )
         with col4:
-            special_disabled = player.special_meter < 100 or player.stamina < 25
-            if st.button("⭐ Special Attack", disabled=special_disabled, use_container_width=True,
-                         help="Powerful attack that deals massive damage (Requires: Full Special Meter, Costs: 25 Stamina)"):
+            special_disabled = (
+                player.special_meter < 100 or player.stamina < 25
+            )
+            if st.button(
+                "⭐ Special Attack",
+                disabled=special_disabled,
+                use_container_width=True,
+                help="Powerful attack that deals massive damage (Requires: Full Special Meter, Costs: 25 Stamina)",
+            ):
                 st.session_state.current_player_action = "special"
                 process_round()
                 st.rerun()
-            st.markdown("<div class='move-info'>Requires 100% special meter<br>Costs 25 stamina<br>Deals 40-60 damage</div>", unsafe_allow_html=True)
+            st.markdown(
+                "<div class='move-info'>Requires 100% special meter<br>Costs 25 stamina<br>Deals 40-60 damage</div>",
+                unsafe_allow_html=True,
+            )
     else:
-        st.markdown("<div class='game-over-container'>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='game-over-container'>", unsafe_allow_html=True
+        )
 
         # ------------------- TIE CHECK -------------------
-        if st.session_state.player.health == 0 and st.session_state.lebron.health == 0:
+        if (
+            st.session_state.player.health == 0
+            and st.session_state.lebron.health == 0
+        ):
             st.markdown("## 🤝 TIE! 🤝")
-            st.markdown("### It's a draw! You and LeBron both fell at the same time.")
+            st.markdown(
+                "### It's a draw! You and LeBron both fell at the same time."
+            )
 
             tie_xp = 70
-            if not hasattr(st.session_state, 'username'):
+            if not hasattr(st.session_state, "username"):
                 st.session_state.username = "Guest"
             username = st.session_state.username
 
             conn = sqlite3.connect("users.db")
             c = conn.cursor()
-            c.execute("SELECT xp, level FROM users WHERE username = ?", (username,))
+            c.execute(
+                "SELECT xp, level FROM users WHERE username = ?", (username,)
+            )
             result = c.fetchone()
             if result:
                 current_xp, current_level = result
                 new_xp = current_xp + tie_xp
                 new_level = current_level
-                while new_level < 60 and new_xp >= xp_required_for_level(new_level + 1):
+                while new_level < 60 and new_xp >= xp_required_for_level(
+                    new_level + 1
+                ):
                     new_level += 1
-                c.execute("UPDATE users SET xp = ?, level = ? WHERE username = ?", (new_xp, new_level, username))
+                c.execute(
+                    "UPDATE users SET xp = ?, level = ? WHERE username = ?",
+                    (new_xp, new_level, username),
+                )
                 conn.commit()
             conn.close()
 
@@ -1609,7 +1923,9 @@ def display_game():
             updated_stats = get_user_stats(username)
             st.markdown(f"**Total XP:** {updated_stats['xp']} XP")
             st.markdown(f"**Current Level:** {updated_stats['level']}")
-            st.markdown(f"**Record:** {updated_stats['wins']}W - {updated_stats['losses']}L")
+            st.markdown(
+                f"**Record:** {updated_stats['wins']}W - {updated_stats['losses']}L"
+            )
             st.session_state.xp_already_awarded = True
 
             col1, col2 = st.columns(2)
@@ -1633,7 +1949,7 @@ def display_game():
         won = player.is_alive()
 
         # Set a default username if not present (for testing)
-        if not hasattr(st.session_state, 'username'):
+        if not hasattr(st.session_state, "username"):
             st.session_state.username = "Guest"
 
         # Call end_battle_with_xp to process battle results and store in session_state
@@ -1655,14 +1971,20 @@ def display_game():
 
         st.markdown(f"**Final Score:** Round {st.session_state.round}")
         st.markdown("**Battle Stats:**")
-        st.markdown(f"- Your remaining health: {player.health}/{player.max_health}")
-        st.markdown(f"- LeBron's remaining health: {lebron.health}/{lebron.max_health}")
+        st.markdown(
+            f"- Your remaining health: {player.health}/{player.max_health}"
+        )
+        st.markdown(
+            f"- LeBron's remaining health: {lebron.health}/{lebron.max_health}"
+        )
 
         # Display XP gained and current stats
         st.markdown(f"**XP Earned:** +{xp_earned} XP")
         st.markdown(f"**Total XP:** {battle_results['total_xp']} XP")
         st.markdown(f"**Current Level:** {new_level}")
-        st.markdown(f"**Record:** {battle_results['wins']}W - {battle_results['losses']}L")
+        st.markdown(
+            f"**Record:** {battle_results['wins']}W - {battle_results['losses']}L"
+        )
 
         if leveled_up:
             st.success(f"🎉 LEVEL UP! You reached Level {new_level}!")
@@ -1684,37 +2006,48 @@ def display_game():
 
     display_battle_log()
 
+
 def display_difficulty_selection():
-    st.markdown("<h1 class='game-title'>LeBron Boss Battle</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 class='game-title'>LeBron Boss Battle</h1>",
+        unsafe_allow_html=True,
+    )
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image("https://wompimages.ampify.care/fetchimage?siteId=7575&v=2&jpgQuality=100&width=700&url=https%3A%2F%2Fi.kym-cdn.com%2Fentries%2Ficons%2Ffacebook%2F000%2F049%2F004%2Flebronsunshinecover.jpg", width=500)
+        st.image(
+            "https://wompimages.ampify.care/fetchimage?siteId=7575&v=2&jpgQuality=100&width=700&url=https%3A%2F%2Fi.kym-cdn.com%2Fentries%2Ficons%2Ffacebook%2F000%2F049%2F004%2Flebronsunshinecover.jpg",
+            width=500,
+        )
     st.markdown("<div class='difficulty-card'>", unsafe_allow_html=True)
     st.markdown("<h2>Choose Your Difficulty</h2>", unsafe_allow_html=True)
     difficulty_options = {
         "Easy": "LeBron has 100 HP and uses basic moves mostly at random.",
         "Medium": "LeBron has 160 HP and plays more strategically.",
-        "Hard": "LeBron has 180 HP and uses advanced tactics and powerful combos."
+        "Hard": "LeBron has 180 HP and uses advanced tactics and powerful combos.",
     }
     selected_difficulty = st.select_slider(
         "Select difficulty:",
         options=list(difficulty_options.keys()),
-        value=st.session_state.difficulty
+        value=st.session_state.difficulty,
     )
     st.info(difficulty_options[selected_difficulty])
     st.session_state.difficulty = selected_difficulty
-    show_tutorial = st.checkbox("Show Tutorial", value=not st.session_state.tutorial_shown)
+    show_tutorial = st.checkbox(
+        "Show Tutorial", value=not st.session_state.tutorial_shown
+    )
     if show_tutorial:
         st.markdown("### How to Play:")
-        st.markdown("""
+        st.markdown(
+            """
         1. **Attack** - Deal damage but costs stamina  
         2. **Defend** - Reduce incoming damage by 50%  
         3. **Rest** - Recover stamina  
         4. **Special Attack** - Powerful move that requires a full special meter
 
         Fill your special meter by performing actions. Win by reducing LeBron's health to zero!
-        """)
+        """
+        )
         st.session_state.tutorial_shown = True
     if st.button("Start Game", use_container_width=True):
         st.session_state.player = Player("You", 140, 100)
@@ -1724,26 +2057,38 @@ def display_difficulty_selection():
         st.session_state.log = []
         st.session_state.action_taken = False
         st.session_state.game_started = True
-        st.session_state.xp_already_awarded = False  # Reset flag when starting new game
+        st.session_state.xp_already_awarded = (
+            False  # Reset flag when starting new game
+        )
         add_log_entry("The battle begins! Your turn first.", "system")
         st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
+
 # --------------------- Page UIs --------------------- #
 
+
 def login_ui():
-    st.markdown("<h1 class='auth-title'>Welcome Back</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='auth-subtitle'>Sign in to continue your battle</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 class='auth-title'>Welcome Back</h1>", unsafe_allow_html=True
+    )
+    st.markdown(
+        "<p class='auth-subtitle'>Sign in to continue your battle</p>",
+        unsafe_allow_html=True,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='auth-logo'>", unsafe_allow_html=True)
-    st.image("https://cdn-wp.thesportsrush.com/2021/10/faeeadb8-untitled-design-22.jpg?format=auto&w=3840&q=75", width=350)
+    st.image(
+        "https://cdn-wp.thesportsrush.com/2021/10/faeeadb8-untitled-design-22.jpg?format=auto&w=3840&q=75",
+        width=350,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
     username = st.text_input("Username", key="login_username")
     password = st.text_input("Password", type="password", key="login_password")
 
-    col1, col2, col3 = st.columns([1,3,1])
+    col1, col2, col3 = st.columns([1, 3, 1])
     with col2:
         if st.button("Sign In", use_container_width=True):
             if authenticate_user(username, password):
@@ -1756,20 +2101,27 @@ def login_ui():
                 st.error("Incorrect username or password")
 
     st.markdown("<div class='auth-footer'>", unsafe_allow_html=True)
-    st.markdown("Don't have an account? Register an account now!", unsafe_allow_html=True)
+    st.markdown(
+        "Don't have an account? Register an account now!",
+        unsafe_allow_html=True,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
     # JavaScript to handle the register link click
-    st.markdown("""
+    st.markdown(
+        """
     <script>
         document.getElementById('register-link').addEventListener('click', function(e) {
             e.preventDefault();
             window.location.href = window.location.pathname + "?page=Register";
         });
     </script>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 def lepass_ui():
     """Display the LePASS progression UI with gallery of unlocked LeBron images"""
@@ -1797,16 +2149,27 @@ def lepass_ui():
 
     # Get current LeBron image
     current_image_url = get_lebron_image_url(current_level)
-    next_image_url = get_lebron_image_url(current_level + 1) if current_level < 60 else current_image_url
+    next_image_url = (
+        get_lebron_image_url(current_level + 1)
+        if current_level < 60
+        else current_image_url
+    )
 
     # UI Header
-    st.markdown("<h1 class='game-title'>LePASS™ Battle Pass</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 class='game-title'>LePASS™ Battle Pass</h1>",
+        unsafe_allow_html=True,
+    )
 
     # Player Stats Section
     col1, col2 = st.columns([1, 2])
 
     with col1:
-        st.image(current_image_url, caption=f"Level {current_level} LeBron", width=250)
+        st.image(
+            current_image_url,
+            caption=f"Level {current_level} LeBron",
+            width=250,
+        )
 
     with col2:
         st.markdown(f"### Welcome to your LePASS, {username}!")
@@ -1819,14 +2182,18 @@ def lepass_ui():
                 <div class="lepass-progress-bar" style="width: {progress * 100}%"></div>
                 <div class="lepass-progress-text">{current_xp} / {next_level_xp} XP</div>
             </div>
-            """, 
-            unsafe_allow_html=True
+            """,
+            unsafe_allow_html=True,
         )
 
         if current_level < 60:
-            st.markdown(f"**XP needed for Level {current_level + 1}:** {xp_needed} XP")
+            st.markdown(
+                f"**XP needed for Level {current_level + 1}:** {xp_needed} XP"
+            )
         else:
-            st.markdown("**MAX LEVEL REACHED!** You've collected all LeBron images!")
+            st.markdown(
+                "**MAX LEVEL REACHED!** You've collected all LeBron images!"
+            )
 
         st.markdown(f"**Battle Record:** {wins} Wins / {losses} Losses")
 
@@ -1835,16 +2202,27 @@ def lepass_ui():
     if current_level < 60:
         col1, col2 = st.columns([1, 2])
         with col1:
-            st.image(next_image_url, caption=f"Level {current_level + 1} LeBron", width=200)
+            st.image(
+                next_image_url,
+                caption=f"Level {current_level + 1} LeBron",
+                width=200,
+            )
         with col2:
             st.markdown(f"**Unlock at Level {current_level + 1}**")
             st.markdown(f"Earn **{xp_needed}** more XP to unlock!")
-            st.markdown("Win battles against LeBron to earn XP. Higher difficulties and better performance grant more XP!")
+            st.markdown(
+                "Win battles against LeBron to earn XP. Higher difficulties and better performance grant more XP!"
+            )
     else:
-        st.success("CONGRATULATIONS! You've reached MAX LEVEL and collected all 60 LeBron images!")
+        st.success(
+            "CONGRATULATIONS! You've reached MAX LEVEL and collected all 60 LeBron images!"
+        )
 
     # NEW SECTION: LeBron Gallery
-    st.markdown("<h3 class='lepass-section-header'>Your LeBron Collection</h3>", unsafe_allow_html=True)
+    st.markdown(
+        "<h3 class='lepass-section-header'>Your LeBron Collection</h3>",
+        unsafe_allow_html=True,
+    )
 
     # Add a gallery filter option
     view_options = ["All Unlocked", "By Rarity"]
@@ -1877,16 +2255,21 @@ def lepass_ui():
             "Uncommon (Levels 16-30)": range(16, min(31, current_level + 1)),
             "Rare (Levels 31-45)": range(31, min(46, current_level + 1)),
             "Epic (Levels 46-55)": range(46, min(56, current_level + 1)),
-            "Legendary (Levels 56-60)": range(56, min(61, current_level + 1))
+            "Legendary (Levels 56-60)": range(56, min(61, current_level + 1)),
         }
 
         # Display images grouped by rarity
         for rarity, level_range in rarity_tiers.items():
-            if len(list(level_range)) > 0:  # Only show rarities that have unlocked items
+            if (
+                len(list(level_range)) > 0
+            ):  # Only show rarities that have unlocked items
                 st.markdown(f"#### {rarity}")
 
                 # Create expandable section for each rarity tier
-                with st.expander("Show Collection", expanded=rarity == "Legendary (Levels 56-60)"):
+                with st.expander(
+                    "Show Collection",
+                    expanded=rarity == "Legendary (Levels 56-60)",
+                ):
                     column_count = 5
                     gallery_cols = st.columns(column_count)
 
@@ -1895,22 +2278,31 @@ def lepass_ui():
                         col_index = i % column_count
 
                         with gallery_cols[col_index]:
-                            st.image(image_url, caption=f"Level {level}", width=100)
+                            st.image(
+                                image_url, caption=f"Level {level}", width=100
+                            )
 
     # Locked images section
     if current_level < 60:
         remaining = 60 - current_level
         st.markdown(f"### Locked LeBrons ({remaining} remaining)")
-        st.info(f"You still have {remaining} LeBron images to unlock! Continue winning battles to unlock more.")
+        st.info(
+            f"You still have {remaining} LeBron images to unlock! Continue winning battles to unlock more."
+        )
 
         # Show a teaser of what's to come
         teaser_level = min(current_level + 10, 60)
         st.markdown(f"Reach level {teaser_level} to unlock:")
         teaser_image = get_lebron_image_url(teaser_level)
-        st.image(teaser_image, caption=f"Level {teaser_level} Preview", width=150)
+        st.image(
+            teaser_image, caption=f"Level {teaser_level} Preview", width=150
+        )
 
     # XP Earning Guide
-    st.markdown("<h3 class='lepass-section-header'>How to Earn XP</h3>", unsafe_allow_html=True)
+    st.markdown(
+        "<h3 class='lepass-section-header'>How to Earn XP</h3>",
+        unsafe_allow_html=True,
+    )
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -1929,48 +2321,84 @@ def lepass_ui():
     st.info("💡 **TIP:** Higher health at the end of battle = more XP!")
 
     # Level Progression Chart
-    st.markdown("<h3 class='lepass-section-header'>Level Progression</h3>", unsafe_allow_html=True)
+    st.markdown(
+        "<h3 class='lepass-section-header'>Level Progression</h3>",
+        unsafe_allow_html=True,
+    )
 
     # Create data for level progression chart
     levels = list(range(1, 61))
     xp_requirements = [xp_required_for_level(level) for level in levels]
 
     # Highlight current level in chart
-    st.vega_lite_chart({
-        "data": {"values": [{"level": i, "xp": xp_requirements[i-1], "current": i == current_level} for i in levels]},
-        "mark": {"type": "line", "point": True},
-        "encoding": {
-            "x": {"field": "level", "type": "quantitative", "title": "Level"},
-            "y": {"field": "xp", "type": "quantitative", "title": "XP Required"},
-            "color": {"field": "current", "type": "nominal", "scale": {"range": ["#4880EC", "#FF416C"]}, "legend": None},
-            "size": {"field": "current", "type": "nominal", "scale": {"range": [2, 5]}, "legend": None}
-        },
-        "width": 700,
-        "height": 300
-    })
+    st.vega_lite_chart(
+        {
+            "data": {
+                "values": [
+                    {
+                        "level": i,
+                        "xp": xp_requirements[i - 1],
+                        "current": i == current_level,
+                    }
+                    for i in levels
+                ]
+            },
+            "mark": {"type": "line", "point": True},
+            "encoding": {
+                "x": {
+                    "field": "level",
+                    "type": "quantitative",
+                    "title": "Level",
+                },
+                "y": {
+                    "field": "xp",
+                    "type": "quantitative",
+                    "title": "XP Required",
+                },
+                "color": {
+                    "field": "current",
+                    "type": "nominal",
+                    "scale": {"range": ["#4880EC", "#FF416C"]},
+                    "legend": None,
+                },
+                "size": {
+                    "field": "current",
+                    "type": "nominal",
+                    "scale": {"range": [2, 5]},
+                    "legend": None,
+                },
+            },
+            "width": 700,
+            "height": 300,
+        }
+    )
 
     # Note about final levels
-    st.markdown("""
+    st.markdown(
+        """
         **Note:** Levels 1-50 increase linearly, while levels 51-60 require exponentially more XP.
         The final 10 levels are meant to be challenging to achieve!
-    """)
+    """
+    )
 
     # Return to game button
     if st.button("Return to Game", use_container_width=True):
         st.session_state.page = "LePlay"
         st.rerun()
 
+
 def lecareer_ui():
     """Display the LeCareer page showing LeBron's career journey with text and images"""
-    
+
     # Only allow access if logged in
     if not st.session_state.get("logged_in", False):
         st.error("You must be logged in to view LeCareer!")
         st.session_state.page = "Login"
         st.rerun()
-    
+
     # Add custom CSS for LeCareer page
-    st.markdown("""
+    st.markdown(
+        """
     <style>
         /* LeCareer specific styling */
         .career-header {
@@ -2085,51 +2513,70 @@ def lecareer_ui():
             box-shadow: 0 0 0 3px rgba(72, 128, 236, 0.2);
         }
     </style>
-    """, unsafe_allow_html=True)
-    
+    """,
+        unsafe_allow_html=True,
+    )
+
     # UI Header
-    st.markdown("<h1 class='game-title'>LeCareer Journey</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; margin-bottom: 30px;'>The storied career path of King James</p>", unsafe_allow_html=True)
-    
+    st.markdown(
+        "<h1 class='game-title'>LeCareer Journey</h1>", unsafe_allow_html=True
+    )
+    st.markdown(
+        "<p style='text-align: center; margin-bottom: 30px;'>The storied career path of King James</p>",
+        unsafe_allow_html=True,
+    )
+
     # Timeline Overview
     st.markdown("<div class='timeline-container'>", unsafe_allow_html=True)
     st.markdown("<div class='timeline-bar'></div>", unsafe_allow_html=True)
-    
+
     timeline_points = [
         {"year": "2003", "top": "0%", "text": "Drafted #1 Overall"},
         {"year": "2010", "top": "20%", "text": "The Decision"},
         {"year": "2014", "top": "40%", "text": "Return to Cleveland"},
         {"year": "2016", "top": "60%", "text": "Cleveland Championship"},
         {"year": "2018", "top": "80%", "text": "Joins Lakers"},
-        {"year": "2020", "top": "100%", "text": "Lakers Championship"}
+        {"year": "2020", "top": "100%", "text": "Lakers Championship"},
     ]
-    
+
     for point in timeline_points:
-        st.markdown(f"""
+        st.markdown(
+            f"""
         <div class='timeline-point' style='top: {point["top"]};'></div>
         <div style='margin-left: 25px; padding: 10px 0; position: relative; top: calc({point["top"]} - 10px);'>
             <strong>{point["year"]}</strong> - {point["text"]}
         </div>
-        """, unsafe_allow_html=True)
-    
+        """,
+            unsafe_allow_html=True,
+        )
+
     st.markdown("</div>", unsafe_allow_html=True)
-    
+
     # Career Section 1: First Cleveland Stint
-    st.markdown("<div class='career-section cavaliers-1'>", unsafe_allow_html=True)
-    st.markdown("<h2 class='career-title'>Cleveland Cavaliers (First Stint)</h2>", unsafe_allow_html=True)
-    st.markdown("<div class='career-years'>2003-2010</div>", unsafe_allow_html=True)
-    
+    st.markdown(
+        "<div class='career-section cavaliers-1'>", unsafe_allow_html=True
+    )
+    st.markdown(
+        "<h2 class='career-title'>Cleveland Cavaliers (First Stint)</h2>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div class='career-years'>2003-2010</div>", unsafe_allow_html=True
+    )
+
     col1, col2 = st.columns([3, 2])
-    
+
     with col1:
-        st.markdown("""
+        st.markdown(
+            """
         LeBron James began his NBA journey with his hometown team after being selected as the #1 overall pick in the 2003 NBA Draft. Coming straight out of St. Vincent-St. Mary High School in Akron, Ohio, James was heralded as "The Chosen One" and faced immense pressure to deliver.
         
         During his first stint with the Cavaliers, James transformed the franchise from lottery regulars to championship contenders. He led the team to their first NBA Finals appearance in 2007, though they were swept by the San Antonio Spurs.
         
         Despite his individual brilliance, James couldn't secure a championship in Cleveland during this period, leading to his controversial departure in 2010 via "The Decision" television special.
-        """)
-        
+        """
+        )
+
         st.markdown("<div class='career-stats'>", unsafe_allow_html=True)
         st.markdown("**First Cleveland Stint Stats:**", unsafe_allow_html=True)
         st.markdown("- Games: 548", unsafe_allow_html=True)
@@ -2138,38 +2585,66 @@ def lecareer_ui():
         st.markdown("- Assists: 3,810 (6.9 APG)", unsafe_allow_html=True)
         st.markdown("- Field Goal %: 47.5%", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.markdown("<div class='career-achievements'>", unsafe_allow_html=True)
+
+        st.markdown(
+            "<div class='career-achievements'>", unsafe_allow_html=True
+        )
         st.markdown("**Key Achievements:**", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge mvp'>MVP (2009, 2010)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>Rookie of the Year (2004)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>6× All-Star</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>6× All-NBA</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>2× All-Defensive Team</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>Scoring Champion (2008)</span>", unsafe_allow_html=True)
+        st.markdown(
+            "<span class='achievement-badge mvp'>MVP (2009, 2010)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>Rookie of the Year (2004)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>6× All-Star</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>6× All-NBA</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>2× All-Defensive Team</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>Scoring Champion (2008)</span>",
+            unsafe_allow_html=True,
+        )
         st.markdown("</div>", unsafe_allow_html=True)
-    
+
     with col2:
-        st.image('https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/LebronWizards2.jpg/1200px-LebronWizards2.jpg')
-    
+        st.image(
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/LebronWizards2.jpg/1200px-LebronWizards2.jpg"
+        )
+
     st.markdown("</div>", unsafe_allow_html=True)
-    
+
     # Career Section 2: Miami Heat
     st.markdown("<div class='career-section heat'>", unsafe_allow_html=True)
-    st.markdown("<h2 class='career-title'>Miami Heat</h2>", unsafe_allow_html=True)
-    st.markdown("<div class='career-years'>2010-2014</div>", unsafe_allow_html=True)
-    
+    st.markdown(
+        "<h2 class='career-title'>Miami Heat</h2>", unsafe_allow_html=True
+    )
+    st.markdown(
+        "<div class='career-years'>2010-2014</div>", unsafe_allow_html=True
+    )
+
     col1, col2 = st.columns([3, 2])
-    
+
     with col1:
-        st.markdown("""
+        st.markdown(
+            """
         In the summer of 2010, LeBron made the controversial decision to join forces with Dwyane Wade and Chris Bosh in Miami, forming what became known as "The Big Three." His famous words "I'm taking my talents to South Beach" became an instant cultural phenomenon.
         
         This move marked a turning point in his career. After a disappointing loss to the Dallas Mavericks in the 2011 Finals, James responded with perhaps the most dominant stretch of his career, winning back-to-back championships in 2012 and 2013 against the Oklahoma City Thunder and San Antonio Spurs respectively.
         
         During his time in Miami, LeBron evolved as both a player and a leader. He expanded his game, becoming more efficient while developing his post skills and three-point shooting. His defensive prowess reached its peak during this period, as he regularly guarded multiple positions and anchored Miami's aggressive defensive schemes.
-        """)
-        
+        """
+        )
+
         st.markdown("<div class='career-stats'>", unsafe_allow_html=True)
         st.markdown("**Miami Heat Stats:**", unsafe_allow_html=True)
         st.markdown("- Games: 294", unsafe_allow_html=True)
@@ -2178,38 +2653,69 @@ def lecareer_ui():
         st.markdown("- Assists: 1,968 (6.7 APG)", unsafe_allow_html=True)
         st.markdown("- Field Goal %: 54.3%", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.markdown("<div class='career-achievements'>", unsafe_allow_html=True)
+
+        st.markdown(
+            "<div class='career-achievements'>", unsafe_allow_html=True
+        )
         st.markdown("**Key Achievements:**", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge championship'>NBA Champion (2012, 2013)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge mvp'>Finals MVP (2012, 2013)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge mvp'>Regular Season MVP (2012, 2013)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>4× All-Star</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>4× All-NBA First Team</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>4× All-Defensive First Team</span>", unsafe_allow_html=True)
+        st.markdown(
+            "<span class='achievement-badge championship'>NBA Champion (2012, 2013)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge mvp'>Finals MVP (2012, 2013)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge mvp'>Regular Season MVP (2012, 2013)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>4× All-Star</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>4× All-NBA First Team</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>4× All-Defensive First Team</span>",
+            unsafe_allow_html=True,
+        )
         st.markdown("</div>", unsafe_allow_html=True)
-    
+
     with col2:
-        st.image('https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/LeBron_James_vs_Washington_3-30-11.jpg/800px-LeBron_James_vs_Washington_3-30-11.jpg')
-    
+        st.image(
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/LeBron_James_vs_Washington_3-30-11.jpg/800px-LeBron_James_vs_Washington_3-30-11.jpg"
+        )
+
     st.markdown("</div>", unsafe_allow_html=True)
-    
+
     # Career Section 3: Cleveland Return
-    st.markdown("<div class='career-section cavaliers-2'>", unsafe_allow_html=True)
-    st.markdown("<h2 class='career-title'>Cleveland Cavaliers (Return)</h2>", unsafe_allow_html=True)
-    st.markdown("<div class='career-years'>2014-2018</div>", unsafe_allow_html=True)
-    
+    st.markdown(
+        "<div class='career-section cavaliers-2'>", unsafe_allow_html=True
+    )
+    st.markdown(
+        "<h2 class='career-title'>Cleveland Cavaliers (Return)</h2>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div class='career-years'>2014-2018</div>", unsafe_allow_html=True
+    )
+
     col1, col2 = st.columns([3, 2])
-    
+
     with col1:
-        st.markdown("""
+        st.markdown(
+            """
         In 2014, LeBron made the emotional decision to return to Cleveland, declaring in a famous Sports Illustrated essay that "I'm coming home." His stated goal was clear: bring a championship to Cleveland, a city that hadn't won a major sports title in over 50 years.
         
         Teaming up with Kyrie Irving and later Kevin Love, James led the Cavaliers to four consecutive NBA Finals appearances against the Golden State Warriors dynasty. The pinnacle of this run came in 2016 when the Cavaliers completed a historic comeback from a 3-1 deficit to win the NBA Finals, with James delivering the iconic chase-down block on Andre Iguodala in Game 7.
         
         This championship fulfilled his promise to Cleveland and cemented his legacy as one of the greatest players of all time. Despite falling short in his other Finals appearances during this period, James continued to elevate his game, particularly in the playoffs where he routinely put up historic performances.
-        """)
-        
+        """
+        )
+
         st.markdown("<div class='career-stats'>", unsafe_allow_html=True)
         st.markdown("**Cleveland Return Stats:**", unsafe_allow_html=True)
         st.markdown("- Games: 301", unsafe_allow_html=True)
@@ -2218,31 +2724,59 @@ def lecareer_ui():
         st.markdown("- Assists: 2,279 (7.6 APG)", unsafe_allow_html=True)
         st.markdown("- Field Goal %: 52.0%", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.markdown("<div class='career-achievements'>", unsafe_allow_html=True)
+
+        st.markdown(
+            "<div class='career-achievements'>", unsafe_allow_html=True
+        )
         st.markdown("**Key Achievements:**", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge championship'>NBA Champion (2016)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge mvp'>Finals MVP (2016)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>4× All-Star</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>4× All-NBA First Team</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>3× All-Defensive Team</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>4× Eastern Conference Championships</span>", unsafe_allow_html=True)
+        st.markdown(
+            "<span class='achievement-badge championship'>NBA Champion (2016)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge mvp'>Finals MVP (2016)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>4× All-Star</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>4× All-NBA First Team</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>3× All-Defensive Team</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>4× Eastern Conference Championships</span>",
+            unsafe_allow_html=True,
+        )
         st.markdown("</div>", unsafe_allow_html=True)
-    
+
     with col2:
-        st.image('https://scontent.fyyz1-1.fna.fbcdn.net/v/t39.30808-6/464428141_8297619890365839_2314504659794794456_n.jpg?_nc_cat=109&ccb=1-7&_nc_sid=0b6b33&_nc_ohc=IJxGRrIFw2EQ7kNvgFXmTpH&_nc_oc=Adkb2OuJ5YaUUf1yLG762rkKEWVMYw57S09XciGgilJu45nrOQOOuYdZTjnN2d87sH4a5x7gRHJ0GiVLLiOS817Z&_nc_zt=23&_nc_ht=scontent.fyyz1-1.fna&_nc_gid=X9OikiEnGqva6R9dS-eGXQ&oh=00_AYG3aMcnzXeExfTojbaLAyVTSj-zPhLB-4SLkfQtdQHfbw&oe=67E655FD')
-    
+        st.image(
+            "https://scontent.fyyz1-1.fna.fbcdn.net/v/t39.30808-6/464428141_8297619890365839_2314504659794794456_n.jpg?_nc_cat=109&ccb=1-7&_nc_sid=0b6b33&_nc_ohc=IJxGRrIFw2EQ7kNvgFXmTpH&_nc_oc=Adkb2OuJ5YaUUf1yLG762rkKEWVMYw57S09XciGgilJu45nrOQOOuYdZTjnN2d87sH4a5x7gRHJ0GiVLLiOS817Z&_nc_zt=23&_nc_ht=scontent.fyyz1-1.fna&_nc_gid=X9OikiEnGqva6R9dS-eGXQ&oh=00_AYG3aMcnzXeExfTojbaLAyVTSj-zPhLB-4SLkfQtdQHfbw&oe=67E655FD"
+        )
+
     st.markdown("</div>", unsafe_allow_html=True)
-    
+
     # Career Section 4: Los Angeles Lakers
     st.markdown("<div class='career-section lakers'>", unsafe_allow_html=True)
-    st.markdown("<h2 class='career-title'>Los Angeles Lakers</h2>", unsafe_allow_html=True)
-    st.markdown("<div class='career-years'>2018-Present</div>", unsafe_allow_html=True)
-    
+    st.markdown(
+        "<h2 class='career-title'>Los Angeles Lakers</h2>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div class='career-years'>2018-Present</div>", unsafe_allow_html=True
+    )
+
     col1, col2 = st.columns([3, 2])
-    
+
     with col1:
-        st.markdown("""
+        st.markdown(
+            """
         In 2018, LeBron decided to join the storied Los Angeles Lakers franchise, signing a four-year contract. This move represented both a basketball decision and a lifestyle/business choice, as James expanded his media company and entertainment ventures in Hollywood.
         
         After a challenging first season marred by injury, the Lakers acquired Anthony Davis in 2019, forming a dominant duo. During the pandemic-interrupted 2019-20 season, James led the Lakers to the NBA championship in the Orlando "bubble," earning his fourth NBA title and fourth Finals MVP award.
@@ -2250,8 +2784,9 @@ def lecareer_ui():
         In Los Angeles, James has continued to defy age, remaining one of the league's premier players well into his late 30s. He became the NBA's all-time leading scorer in February 2023, surpassing Kareem Abdul-Jabbar's long-standing record, and has continued to adapt his game as he's aged.
         
         His tenure with the Lakers has also seen him embrace his role as one of the game's elder statesmen and most influential voices, using his platform to address social issues while still competing at the highest level.
-        """)
-        
+        """
+        )
+
         st.markdown("<div class='career-stats'>", unsafe_allow_html=True)
         st.markdown("**Lakers Stats (through 2024):**", unsafe_allow_html=True)
         st.markdown("- Games: 342", unsafe_allow_html=True)
@@ -2260,28 +2795,56 @@ def lecareer_ui():
         st.markdown("- Assists: 3,091 (8.0 APG)", unsafe_allow_html=True)
         st.markdown("- Field Goal %: 51.2%", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.markdown("<div class='career-achievements'>", unsafe_allow_html=True)
+
+        st.markdown(
+            "<div class='career-achievements'>", unsafe_allow_html=True
+        )
         st.markdown("**Key Achievements:**", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge championship'>NBA Champion (2020)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge mvp'>Finals MVP (2020)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>NBA All-Time Scoring Leader</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>All-Star Game MVP (2023)</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>6× All-Star</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>5× All-NBA Team</span>", unsafe_allow_html=True)
-        st.markdown("<span class='achievement-badge'>Assists Leader (2020)</span>", unsafe_allow_html=True)
+        st.markdown(
+            "<span class='achievement-badge championship'>NBA Champion (2020)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge mvp'>Finals MVP (2020)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>NBA All-Time Scoring Leader</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>All-Star Game MVP (2023)</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>6× All-Star</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>5× All-NBA Team</span>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<span class='achievement-badge'>Assists Leader (2020)</span>",
+            unsafe_allow_html=True,
+        )
         st.markdown("</div>", unsafe_allow_html=True)
-    
+
     with col2:
-        st.image('https://cdn.nba.com/manage/2020/10/lebron-james-lakers-687x588.jpg')
-    
+        st.image(
+            "https://cdn.nba.com/manage/2020/10/lebron-james-lakers-687x588.jpg"
+        )
+
     st.markdown("</div>", unsafe_allow_html=True)
-    
+
     # Legacy Section
     st.markdown("<div class='career-section'>", unsafe_allow_html=True)
-    st.markdown("<h2 class='career-title'>Career Legacy</h2>", unsafe_allow_html=True)
-    
-    st.markdown("""
+    st.markdown(
+        "<h2 class='career-title'>Career Legacy</h2>", unsafe_allow_html=True
+    )
+
+    st.markdown(
+        """
     Throughout his illustrious career spanning over two decades, LeBron James has transcended basketball to become a global icon. His impact extends far beyond his on-court achievements:
 
     **Basketball Evolution**: James redefined the modern NBA superstar with his unique combination of size, strength, skill, and basketball IQ. His versatility as a playmaker and scorer created a blueprint for future generations.
@@ -2293,8 +2856,9 @@ def lecareer_ui():
     **Cultural Influence**: From "The Decision" to "More Than An Athlete," LeBron has shaped cultural conversations and redefined athlete empowerment in the modern era.
 
     No matter where one stands in the endless GOAT debates, LeBron James' career represents one of the most remarkable athletic journeys in sports history—from a teenage phenom to a global icon who has consistently exceeded the enormous expectations placed upon him.
-    """)
-    
+    """
+    )
+
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Career Points", "40,000+", "All-time leader")
@@ -2302,27 +2866,38 @@ def lecareer_ui():
         st.metric("Championships", "4", "with 3 different teams")
     with col3:
         st.metric("MVP Awards", "4", "Regular Season")
-    
+
     st.markdown("</div>", unsafe_allow_html=True)
-    
+
     # Return to game button
     if st.button("Return to Game", use_container_width=True):
         st.session_state.page = "LePlay"
         st.rerun()
 
+
 def register_ui():
-    st.markdown("<h1 class='auth-title'>Create Account</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='auth-subtitle'>Join the battle against LeBron</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 class='auth-title'>Create Account</h1>", unsafe_allow_html=True
+    )
+    st.markdown(
+        "<p class='auth-subtitle'>Join the battle against LeBron</p>",
+        unsafe_allow_html=True,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='auth-logo'>", unsafe_allow_html=True)
-    st.image("https://www.the-sun.com/wp-content/uploads/sites/6/2023/10/AS_LEBRON-MEMES_OP.jpg?strip=all&quality=100&w=1080&h=1080&crop=1", width=250)
+    st.image(
+        "https://www.the-sun.com/wp-content/uploads/sites/6/2023/10/AS_LEBRON-MEMES_OP.jpg?strip=all&quality=100&w=1080&h=1080&crop=1",
+        width=250,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
     username = st.text_input("Choose a Username", key="register_username")
-    password = st.text_input("Create Password", type="password", key="register_password")
+    password = st.text_input(
+        "Create Password", type="password", key="register_password"
+    )
 
-    col1, col2, col3 = st.columns([1,3,1])
+    col1, col2, col3 = st.columns([1, 3, 1])
     with col2:
         if st.button("Create Account", use_container_width=True):
             if register_user(username, password):
@@ -2337,24 +2912,37 @@ def register_ui():
     st.markdown("</div>", unsafe_allow_html=True)
 
     # JavaScript to handle the login link click
-    st.markdown("""
+    st.markdown(
+        """
     <script>
         document.getElementById('login-link').addEventListener('click', function(e) {
             e.preventDefault();
             window.location.href = window.location.pathname + "?page=Login";
         });
     </script>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 def logout_ui():
     st.markdown("<h1 class='auth-title'>Log Out</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='auth-subtitle'>Are you sure you want to leave?</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<p class='auth-subtitle'>Are you sure you want to leave?</p>",
+        unsafe_allow_html=True,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='text-align: center; margin: 30px 0;'>", unsafe_allow_html=True)
-    st.image("https://www.nickiswift.com/img/gallery/the-transformation-of-lebron-james-from-childhood-to-36-years-old/l-intro-1625330663.jpg", width=700)
+    st.markdown(
+        "<div style='text-align: center; margin: 30px 0;'>",
+        unsafe_allow_html=True,
+    )
+    st.image(
+        "https://www.nickiswift.com/img/gallery/the-transformation-of-lebron-james-from-childhood-to-36-years-old/l-intro-1625330663.jpg",
+        width=700,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
@@ -2373,6 +2961,7 @@ def logout_ui():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+
 def play_ui():
     # Only allow access if logged in
     if not st.session_state.get("logged_in", False):
@@ -2385,9 +2974,11 @@ def play_ui():
     else:
         display_game()
 
+
 # --------------------- Custom CSS --------------------- #
 
-st.markdown("""
+st.markdown(
+    """
 <style>
     [data-testid="stAppViewContainer"] {
         background-image: url("https://i.imgur.com/v5gUNvA.png");
@@ -2568,9 +3159,12 @@ st.markdown("""
         text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # --------------------- Main Navigation --------------------- #
+
 
 def main():
     init_db()
@@ -2578,7 +3172,11 @@ def main():
 
     # Set default page based on login state
     if "page" not in st.session_state:
-        st.session_state.page = "Login" if not st.session_state.get("logged_in", False) else "LePlay"
+        st.session_state.page = (
+            "Login"
+            if not st.session_state.get("logged_in", False)
+            else "LePlay"
+        )
 
     # Sidebar navigation
     if st.session_state.get("logged_in", False):
@@ -2586,19 +3184,34 @@ def main():
     else:
         nav_options = ["Login", "Register"]
 
-
     # Add some space at the top of the sidebar for the image effect
-    st.sidebar.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
+    st.sidebar.markdown(
+        "<div style='height: 100px;'></div>", unsafe_allow_html=True
+    )
 
     # Sidebar navigation with styled title
-    st.sidebar.markdown("<h2 style='color: white; text-align: center; text-shadow: 2px 2px 4px black;'>LeBattle Sim</h2>", unsafe_allow_html=True)
+    st.sidebar.markdown(
+        "<h2 style='color: white; text-align: center; text-shadow: 2px 2px 4px black;'>LeBattle Sim</h2>",
+        unsafe_allow_html=True,
+    )
 
-    selected_page = st.sidebar.radio("", nav_options, index=nav_options.index(st.session_state.page) if st.session_state.page in nav_options else 0)
+    selected_page = st.sidebar.radio(
+        "",
+        nav_options,
+        index=(
+            nav_options.index(st.session_state.page)
+            if st.session_state.page in nav_options
+            else 0
+        ),
+    )
     st.session_state.page = selected_page
 
     # User status
     if st.session_state.get("logged_in", False):
-        st.sidebar.markdown(f"<div style='color: white; text-align: center; margin-top: 20px; padding: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px;'>Logged in as: <b>{st.session_state['username']}</b></div>", unsafe_allow_html=True)
+        st.sidebar.markdown(
+            f"<div style='color: white; text-align: center; margin-top: 20px; padding: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px;'>Logged in as: <b>{st.session_state['username']}</b></div>",
+            unsafe_allow_html=True,
+        )
 
     if st.session_state.page == "Login":
         login_ui()
