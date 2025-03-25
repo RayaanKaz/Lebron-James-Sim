@@ -2600,5 +2600,5 @@ def get_player_profile_pic(username):
          lecareer_ui()
  
  
- if __name__ == "__main__":
+if __name__ == "__main__":
      main()
