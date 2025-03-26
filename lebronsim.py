@@ -1121,7 +1121,7 @@ class LeBron(Player):
              return (damage, "LeBron POSTERS YOU for " + str(damage) + " damage and reduces your stamina!")
          return (damage, msg)
  
-    def special_attack(self):
+     def special_attack(self):
          damage, _ = super().special_attack()
          if self.difficulty == "Medium":
              damage = int(damage * 1.1)
@@ -1129,7 +1129,7 @@ class LeBron(Player):
              damage = int(damage * 1.2)
          return (damage, f"LeBron unleashes his {self.special_move_name} for {damage} MASSIVE damage!")
  
-    def take_damage(self, damage):
+     def take_damage(self, damage):
          if self.is_defending:
              reduction = 0.5
              reduced_damage = int(damage * (1 - reduction))
