@@ -638,8 +638,14 @@ def multiplayer_ui():
                                 "special",
                             )
                             st.rerun()
+
+                # New logic for move submission feedback
+                elif room[f"{player}_move"] is not None:
+                    # Only show "Move submitted" if a move has been selected
+                    st.success(f"🎯 {room[f'{player}_move'].capitalize()} move submitted! Waiting for opponent...")
                 else:
-                    st.success("Move submitted! Waiting for opponent...")
+                    # Fallback for any unexpected states
+                    st.info("Waiting for your move...")
 
                 # -- Countdown timer logic --
                 last_action = datetime.strptime(
