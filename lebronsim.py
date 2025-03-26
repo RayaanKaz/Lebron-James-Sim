@@ -1962,7 +1962,7 @@ def play_ui():
          display_game()
  
  
- st.markdown(
+st.markdown(
      """
  <style>
      [data-testid="stAppViewContainer"] {
