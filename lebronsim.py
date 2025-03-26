@@ -575,9 +575,10 @@ def multiplayer_ui():
             if room["game_state"] == "playing" and room["player2"]:
                 st.markdown("### Your Move")
                 
-                if not room[f"{player}_ready"]:
+                # Always show move buttons unless a move has already been submitted
+                if room[f"{player}_move"] is None:
                     colA, colB, colC, colD = st.columns(4)
-
+        
                     with colA:
                         attack_disabled = room[f"{player}_stamina"] < 15
                         if st.button(
@@ -640,12 +641,10 @@ def multiplayer_ui():
                             st.rerun()
 
                 # New logic for move submission feedback
-                elif room[f"{player}_move"] is not None:
-                    # Only show "Move submitted" if a move has been selected
+                if room[f"{player}_move"] is not None:
                     st.success(f"🎯 {room[f'{player}_move'].capitalize()} move submitted! Waiting for opponent...")
                 else:
-                    # Fallback for any unexpected states
-                    st.info("Waiting for your move...")
+                    st.info("Selecting your move...")
 
                 # -- Countdown timer logic --
                 last_action = datetime.strptime(
