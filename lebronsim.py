@@ -73,7 +73,7 @@ def init_multiplayer_db():
  
  
  # Call the multiplayer DB init within the init_db process
- init_multiplayer_db()
+init_multiplayer_db()
  
  
 def generate_room_code():
