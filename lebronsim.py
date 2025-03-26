@@ -887,7 +887,7 @@ def update_user_xp_fixed(username, xp_earned, won=False):
      return new_level > current_level
  
  
- st.set_page_config(
+st.set_page_config(
      page_title="LeBron Boss Battle",
      layout="wide",
      initial_sidebar_state="collapsed",
