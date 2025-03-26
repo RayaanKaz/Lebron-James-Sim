@@ -695,7 +695,7 @@ def multiplayer_ui():
                  st.info("Waiting for opponent to join...")
  
          # -- ADDED BATTLE LOG --
-        def display_battle_log():
+         def display_battle_log():
              """Display the recent actions in the multiplayer battle"""
              room_code = st.session_state.multiplayer_room_code
              room = get_room_state(room_code)
