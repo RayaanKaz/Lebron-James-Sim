@@ -1114,7 +1114,7 @@ class LeBron(Player):
  
          return chosen_action
  
-    def attack(self):
+     def attack(self):
          damage, msg = super().attack()
          poster_chance = 0.2 if self.difficulty == "Easy" else 0.35 if self.difficulty == "Medium" else 0.5
          if random.random() < poster_chance:
