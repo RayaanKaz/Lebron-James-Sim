@@ -432,6 +432,49 @@ def authenticate_user(username, password):
         return True
     return False
 
+def display_battle_log():
+    """Display the recent actions in the multiplayer battle"""
+    # Retrieve the current room state
+    room_code = st.session_state.multiplayer_room_code
+    room = get_room_state(room_code)
+    
+    if not room:
+        return
+    
+    st.markdown("### Battle Log")
+    
+    # Create a log of what happened in the last turn
+    log_entries = []
+    
+    # Player 1 move log
+    if room['player1_move']:
+        if room['player1_move'] == 'attack':
+            log_entries.append(f"🏀 {room['player1']} attacked!")
+        elif room['player1_move'] == 'defend':
+            log_entries.append(f"🛡️ {room['player1']} defended!")
+        elif room['player1_move'] == 'rest':
+            log_entries.append(f"💤 {room['player1']} rested and recovered stamina.")
+        elif room['player1_move'] == 'special':
+            log_entries.append(f"⭐ {room['player1']} used a special move!")
+    
+    # Player 2 move log
+    if room['player2_move']:
+        if room['player2_move'] == 'attack':
+            log_entries.append(f"🏀 {room['player2']} attacked!")
+        elif room['player2_move'] == 'defend':
+            log_entries.append(f"🛡️ {room['player2']} defended!")
+        elif room['player2_move'] == 'rest':
+            log_entries.append(f"💤 {room['player2']} rested and recovered stamina.")
+        elif room['player2_move'] == 'special':
+            log_entries.append(f"⭐ {room['player2']} used a special move!")
+    
+    # Display log entries
+    if log_entries:
+        for entry in log_entries:
+            st.markdown(f"- {entry}")
+    else:
+        st.markdown("*No actions yet...*")
+
 def multiplayer_ui():
     """Display the multiplayer mode UI"""
     # -- Only allow access if logged in --
@@ -493,10 +536,6 @@ def multiplayer_ui():
         # -- Waiting screen --
         if room["game_state"] == "waiting":
             st.markdown("### Waiting for opponent to join...")
-            # NOTE: Let’s auto-refresh so the host sees updates
-            time.sleep(2)
-            st.rerun()
-
             st.markdown(f"Share this room code: **{st.session_state.multiplayer_room_code}**")
 
             if st.button("Cancel", use_container_width=True):
@@ -532,15 +571,10 @@ def multiplayer_ui():
             st.markdown(f"**Special Meter:** {room[f'{player}_special']}/100")
             st.progress(room[f"{player}_special"] / 100)
 
-            # -- Show move selection if it's this player's turn --
-            if (
-                room["game_state"] == "playing"
-                and (
-                    (player == "player1" and room["current_turn"] == 1)
-                    or (player == "player2" and room["current_turn"] == 2)
-                )
-            ):
+            # -- IMPROVED MOVE SELECTION SECTION --
+            if room["game_state"] == "playing" and room["player2"]:
                 st.markdown("### Your Move")
+                
                 if not room[f"{player}_ready"]:
                     colA, colB, colC, colD = st.columns(4)
 
@@ -653,7 +687,46 @@ def multiplayer_ui():
             else:
                 st.info("Waiting for opponent to join...")
 
-        # -- Display the battle log below the player stats --
+        # -- ADDED BATTLE LOG --
+        def display_battle_log():
+            """Display the recent actions in the multiplayer battle"""
+            room_code = st.session_state.multiplayer_room_code
+            room = get_room_state(room_code)
+            
+            if not room:
+                return
+            
+            st.markdown("### Battle Log")
+            
+            log_entries = []
+            
+            if room['player1_move']:
+                if room['player1_move'] == 'attack':
+                    log_entries.append(f"🏀 {room['player1']} attacked!")
+                elif room['player1_move'] == 'defend':
+                    log_entries.append(f"🛡️ {room['player1']} defended!")
+                elif room['player1_move'] == 'rest':
+                    log_entries.append(f"💤 {room['player1']} rested and recovered stamina.")
+                elif room['player1_move'] == 'special':
+                    log_entries.append(f"⭐ {room['player1']} used a special move!")
+            
+            if room['player2_move']:
+                if room['player2_move'] == 'attack':
+                    log_entries.append(f"🏀 {room['player2']} attacked!")
+                elif room['player2_move'] == 'defend':
+                    log_entries.append(f"🛡️ {room['player2']} defended!")
+                elif room['player2_move'] == 'rest':
+                    log_entries.append(f"💤 {room['player2']} rested and recovered stamina.")
+                elif room['player2_move'] == 'special':
+                    log_entries.append(f"⭐ {room['player2']} used a special move!")
+            
+            if log_entries:
+                for entry in log_entries:
+                    st.markdown(f"- {entry}")
+            else:
+                st.markdown("*No actions yet...*")
+
+        # Call the battle log function
         display_battle_log()
 
         # -- If both are ready, process turn --
@@ -665,7 +738,7 @@ def multiplayer_ui():
             process_multiplayer_turn(st.session_state.multiplayer_room_code)
             st.rerun()
 
-        # -- Handle game over states --
+        # -- Handle game over states -- (rest of the code remains the same)
         if room["game_state"] in ("finished", "match_over"):
             if room["game_state"] == "match_over":
                 st.balloons()
@@ -733,7 +806,6 @@ def multiplayer_ui():
         # -- Auto-refresh every 2 seconds so we see state changes --
         time.sleep(2)
         st.rerun()
-
 
 def get_user_stats(username):
     conn = sqlite3.connect("users.db")
@@ -1138,7 +1210,7 @@ def add_log_entry(message, entry_type="system"):
     st.session_state.log.append({"message": message, "type": entry_type, "timestamp": timestamp})
 
 
-def display_battle_log():
+def single_display_battle_log():
     st.markdown("### 📜 Battle Log")
     with st.container():
         for entry in reversed(st.session_state.log):
