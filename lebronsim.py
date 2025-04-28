@@ -117,24 +117,37 @@ def join_room(room_code, player_username):
     conn.commit()
     success = c.rowcount > 0
     conn.close()
+    if success:
+        st.session_state.multiplayer_room_code = room_code
+        st.session_state.multiplayer_role = "join"
+        st.experimental_rerun()  # <--- force page to refresh immediately after joining
     return success
 
-
 def get_room_state(room_code):
-    """Get current state of a room"""
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
 
     c.execute("SELECT * FROM multiplayer_rooms WHERE room_code = ?", (room_code,))
     result = c.fetchone()
-    if result:
-        columns = [col[0] for col in c.description]
+    columns = [col[0] for col in c.description] if c.description else []
     conn.close()
 
-    if result:
+    if result and columns:
         return dict(zip(columns, result))
     return None
 
+def get_room_state(room_code):
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+
+    c.execute("SELECT * FROM multiplayer_rooms WHERE room_code = ?", (room_code,))
+    result = c.fetchone()
+    columns = [col[0] for col in c.description] if c.description else []
+    conn.close()
+
+    if result and columns:
+        return dict(zip(columns, result))
+    return None
 
 def update_player_move(room_code, player_username, move):
     """Update a player's move in the room"""
@@ -739,6 +752,7 @@ def multiplayer_ui():
         # -- If both are ready, process turn --
         if room["game_state"] == "playing" and room["player1_ready"] and room["player2_ready"]:
             process_multiplayer_turn(st.session_state.multiplayer_room_code)
+            time.sleep(1)
             st.rerun()
 
         # -- Handle game over states -- (rest of the code remains the same)
