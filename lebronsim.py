@@ -104,7 +104,6 @@ def create_room(player_username):
     finally:
         conn.close()
 
-
 def join_room(room_code, player_username):
     """Join an existing room as player 2"""
     conn = sqlite3.connect("users.db")
@@ -117,11 +116,12 @@ def join_room(room_code, player_username):
     conn.commit()
     success = c.rowcount > 0
     conn.close()
+
     if success:
         st.session_state.multiplayer_room_code = room_code
         st.session_state.multiplayer_role = "join"
-        st.experimental_rerun()  # <--- force page to refresh immediately after joining
-    return success
+        return True  # ✅ Just return success, no rerun
+    return False
 
 def get_room_state(room_code):
     conn = sqlite3.connect("users.db")
@@ -522,11 +522,10 @@ def multiplayer_ui():
             room_code = st.text_input("Enter Room Code", max_chars=6, key="join_room_code").upper()
             if st.button("Join Room", use_container_width=True, disabled=not room_code):
                 if join_room(room_code, st.session_state.username):
-                    st.session_state.multiplayer_room_code = room_code
-                    st.session_state.multiplayer_role = "join"
                     st.rerun()
                 else:
                     st.error("Could not join room. It may not exist or is full.")
+
 
     else:
         # -- Retrieve the room info --
